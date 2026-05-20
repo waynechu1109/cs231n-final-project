@@ -1,0 +1,23 @@
+name: multinerf
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - absl-py
+    - gin-config
+    - opencv-python
+    - Pillow
+    - tensorboard
+    - tensorflow
+    - dm_pix
+    - rawpy
+    - mediapy
+    - chex
+    - orbax
+    - flax
+    - scikit-image
+    - lpips
+    - "numpy<2"
+    - "jax[cuda12]==0.4.30"

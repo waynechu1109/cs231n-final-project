@@ -1,0 +1,36 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local environments
+.venv/
+venv/
+env/
+ENV/
+
+# Model weights and generated outputs
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.npy
+*.npz
+
+# Visualization / experiment outputs
+vis_depth/
+vis_video_depth/
+metric_depth/exp/
+metric_depth/vis_depth/
+metric_depth/vis_pointcloud/
+
+# OS/editor files
+.DS_Store
+._*
+*.swp
+*.swo

@@ -1,0 +1,76 @@
+# Operating system and editor files
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+*.bak
+.vscode/
+.idea/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+ENV/
+
+# Nested git metadata backups
+.git-nested-backups/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+*.local
+
+# Project data and generated datasets
+/data/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Model weights, checkpoints, and binary arrays
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.npy
+*.npz
+
+# Training outputs and logs
+logs/
+outputs/
+exp/
+exports/
+vis_depth/
+vis_video_depth/
+vis_pointcloud/
+tensorboard/
+wandb/
+events.out.tfevents*
+checkpoint_*/
+checkpoints/
+nerfstudio_models/
+
+# CUDA / PyTorch / JAX generated caches
+.cache/
+torch_extensions/
+__external_build__/
+
+# Nerfstudio and NeRF generated artifacts
+/nerfstudio/outputs/
+/nerfstudio/exports/
+/outdoor-nerf-depth/nerf-methods/mipnerf360/**/logs/
+/outdoor-nerf-depth/nerf-methods/mipnerf360/**/test_preds_*/
+/Depth-Anything-V2/checkpoints/
+/Depth-Anything-V2/vis_depth/
+/Depth-Anything-V2/vis_video_depth/
+/Depth-Anything-V2/metric_depth/exp/
