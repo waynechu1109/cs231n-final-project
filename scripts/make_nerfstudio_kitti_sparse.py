@@ -118,7 +118,7 @@ def main() -> None:
         json.dump(out_meta, f, indent=4)
         f.write("\n")
 
-    with (args.dst / "SPARSE_EVERY4_MANIFEST.txt").open("w") as f:
+    with (args.dst / f"SPARSE_EVERY{args.stride}_MANIFEST.txt").open("w") as f:
         f.write(f"source_nerfstudio: {make_relative_to_cwd(args.src)}\n")
         f.write(f"sparse_images: {make_relative_to_cwd(args.images)}\n")
         f.write(f"stride: {args.stride}\n")

@@ -136,3 +136,71 @@ tensorboard --logdir /home/ubuntu/final_project/data/kitti/kitti_select_static_5
 ```
 
 Then open the TensorBoard URL printed in the terminal.
+
+
+## 7. Handoff Paths And Sparse Runs
+
+Current repo root:
+
+```text
+/home/ubuntu/final_project
+```
+
+Processed KITTI roots:
+
+```text
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4
+```
+
+Default sequence:
+
+```text
+KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
+```
+
+Depth map folders for the default dense sequence include `depths_gt`, `depths_mff_crop`, `depths_mono_crop`, `depths_ste_conf_-1_crop`, `depths_da2`, and `depths_da2_npy` under:
+
+```text
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
+```
+
+Sparse every-2 MipNeRF-360 checkpoints/logs:
+
+```text
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-1-7.5w-mse-debug
+```
+
+Sparse every-4 MipNeRF-360 checkpoints/logs:
+
+```text
+/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-sparse-every4-7.5w-mse
+```
+
+Exact sparse every-2 command/config:
+
+```bash
+cd /home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
+conda activate multinerf
+
+export DATA_DIR=/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
+
+python -m train \
+  --gin_configs=configs/360.gin \
+  --gin_bindings="Config.max_steps = 50000" \
+  --gin_bindings="Config.sample_every = 1" \
+  --gin_bindings="Config.data_dir = '${DATA_DIR}'" \
+  --gin_bindings="Config.compute_disp_metrics = True" \
+  --gin_bindings="Config.depth_loss_type = 'mse'" \
+  --gin_bindings="Config.checkpoint_dir = '${DATA_DIR}/logs/checkpoints-1-7.5w-mse-debug'" \
+  --logtostderr
+```
+
+Exact sparse every-4 command/config:
+
+```bash
+cd /home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
+conda activate multinerf
+bash scripts/train_kitti_sparse.sh
+```

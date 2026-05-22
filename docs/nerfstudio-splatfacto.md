@@ -101,6 +101,57 @@ The validation/test frames are aligned with the sparse MipNeRF split:
 00000036.png, 00000076.png, 00000116.png, 00000156.png
 ```
 
+
+### Prepared Sparse Every-2 Nerfstudio Dataset
+
+The sparse every-2 dataset for `splatfacto` is here:
+
+```text
+/home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2
+```
+
+It contains:
+
+```text
+images -> /home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/images
+transforms.json
+SPARSE_EVERY2_MANIFEST.txt
+```
+
+The split is:
+
+```text
+88 total frames
+80 train frames
+8 validation frames
+8 test frames
+```
+
+The validation/test frames are:
+
+```text
+00000018.png, 00000038.png, 00000058.png, 00000078.png,
+00000098.png, 00000118.png, 00000138.png, 00000158.png
+```
+
+Train with:
+
+```bash
+cd /home/ubuntu/final_project/nerfstudio
+conda activate nerfstudio
+
+ns-train splatfacto \
+  --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2 \
+  --vis tensorboard
+```
+
+Previous sparse `splatfacto` outputs are under:
+
+```text
+/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every2/splatfacto
+/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto
+```
+
 ### Nerfstudio Environment
 
 Activate the nerfstudio environment:
@@ -166,7 +217,7 @@ Recommended stable launch command:
 cd /home/ubuntu/final_project/nerfstudio
 
 ns-train splatfacto \
-  --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034 \
+  --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2 \
   --vis tensorboard
 ```
 

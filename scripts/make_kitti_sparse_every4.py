@@ -164,7 +164,7 @@ def main() -> None:
         counts = copy_sequence(seq_src, seq_dst, args.stride, args.copy)
         summaries.append((seq_src.name, counts))
 
-    manifest = args.dst / "SPARSE_EVERY4_MANIFEST.txt"
+    manifest = args.dst / f"SPARSE_EVERY{args.stride}_MANIFEST.txt"
     with manifest.open("w") as f:
         f.write(f"source: {args.src}\n")
         f.write(f"stride: {args.stride}\n")
