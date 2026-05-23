@@ -183,6 +183,7 @@ The original long README has been split into focused guides:
 | --- | --- |
 | MipNeRF-360 KITTI setup and training | [docs/mipnerf360-kitti.md](docs/mipnerf360-kitti.md) |
 | Nerfstudio Splatfacto dense/sparse training | [docs/nerfstudio-splatfacto.md](docs/nerfstudio-splatfacto.md) |
+| Nerfstudio Splatfacto DA2 depth supervision | [docs/nerfstudio-splatfacto-da2.md](docs/nerfstudio-splatfacto-da2.md) |
 | Depth Anything V2 depth-supervision pipeline | [docs/depth-anything-v2.md](docs/depth-anything-v2.md) |
 | NeRF++ and Instant-NGP Depth notes | [docs/other-methods.md](docs/other-methods.md) |
 | Troubleshooting and citation | [docs/troubleshooting.md](docs/troubleshooting.md) |
@@ -213,6 +214,14 @@ conda activate nerfstudio
 ns-train splatfacto \
   --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every4 \
   --vis tensorboard
+```
+
+Splatfacto with DA2 depth supervision (sparse every-2, analogous to MipNeRF `depth_sup_type='da2'`):
+
+```bash
+cd /home/ubuntu/final_project
+conda activate nerfstudio
+bash scripts/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 Depth Anything V2 preprocessing:

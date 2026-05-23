@@ -44,6 +44,7 @@ from nerfstudio.data.datamanagers.base_datamanager import DataManager, DataManag
 from nerfstudio.data.dataparsers.base_dataparser import DataparserOutputs
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.datasets.base_dataset import InputDataset
+from nerfstudio.data.datasets.depth_full_image_dataset import DepthFullImageDataset
 from nerfstudio.data.utils.data_utils import identity_collate
 from nerfstudio.data.utils.dataloaders import ImageBatchStream, _undistort_image
 from nerfstudio.utils.misc import get_dict_to_torch, get_orig_class
@@ -90,6 +91,13 @@ class FullImageDatamanagerConfig(DataManagerConfig):
     More details are described here: https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader"""
     cache_compressed_images: bool = False
     """If True, cache raw image files as byte strings to RAM."""
+
+
+@dataclass
+class DepthFullImageDatamanagerConfig(FullImageDatamanagerConfig):
+    """Full-image datamanager that also loads per-frame depth maps."""
+
+    _target: Type = field(default_factory=lambda: FullImageDatamanager[DepthFullImageDataset])
 
 
 class FullImageDatamanager(DataManager, Generic[TDataset]):
@@ -257,12 +265,16 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
                     cache["mask"] = cache["mask"].to(self.device)
                 if "depth" in cache:
                     cache["depth"] = cache["depth"].to(self.device)
+                if "depth_image" in cache:
+                    cache["depth_image"] = cache["depth_image"].to(self.device)
                 self.train_cameras = self.train_dataset.cameras.to(self.device)
         elif cache_images_device == "cpu":
             for cache in undistorted_images:
                 cache["image"] = cache["image"].pin_memory()
                 if "mask" in cache:
                     cache["mask"] = cache["mask"].pin_memory()
+                if "depth_image" in cache:
+                    cache["depth_image"] = cache["depth_image"].pin_memory()
                 self.train_cameras = self.train_dataset.cameras
         else:
             assert_never(cache_images_device)
@@ -367,6 +379,8 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
         cameras = []
         for i in image_indices:
             data[i]["image"] = data[i]["image"].to(self.device)
+            if "depth_image" in data[i]:
+                data[i]["depth_image"] = data[i]["depth_image"].to(self.device)
             cameras.append(_cameras[i : i + 1])
         assert len(self.eval_dataset.cameras.shape) == 1, "Assumes single batch dimension"
         return list(zip(cameras, data))
@@ -403,6 +417,8 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
         # This can cause a memory leak: https://github.com/nerfstudio-project/nerfstudio/issues/3335
         data = data.copy()
         data["image"] = data["image"].to(self.device)
+        if "depth_image" in data:
+            data["depth_image"] = data["depth_image"].to(self.device)
 
         assert len(self.train_cameras.shape) == 1, "Assumes single batch dimension"
         camera = self.train_cameras[image_idx : image_idx + 1].to(self.device)
@@ -437,6 +453,8 @@ class FullImageDatamanager(DataManager, Generic[TDataset]):
         data = self.cached_eval[image_idx]
         data = data.copy()
         data["image"] = data["image"].to(self.device)
+        if "depth_image" in data:
+            data["depth_image"] = data["depth_image"].to(self.device)
         assert len(self.eval_dataset.cameras.shape) == 1, "Assumes single batch dimension"
         camera = self.eval_dataset.cameras[image_idx : image_idx + 1].to(self.device)
         return camera, data

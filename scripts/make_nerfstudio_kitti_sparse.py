@@ -45,7 +45,21 @@ def parse_args() -> argparse.Namespace:
         "--hold-every",
         type=int,
         default=10,
-        help="Hold out every Nth sparse frame, starting at sparse index N-1.",
+        help="Hold out every Nth sparse frame for test, starting at sparse index N-1.",
+    )
+    parser.add_argument(
+        "--val-offset",
+        type=int,
+        default=None,
+        help=(
+            "Sparse-frame offset for validation frames. Defaults to the midpoint "
+            "between test frames, e.g. 4 when --hold-every=10."
+        ),
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace the destination dataset if it already exists.",
     )
     parser.add_argument(
         "--copy-images",
@@ -72,8 +86,20 @@ def main() -> None:
         raise SystemExit("--stride must be positive")
     if args.hold_every <= 0:
         raise SystemExit("--hold-every must be positive")
+    val_offset = args.val_offset
+    if val_offset is None:
+        val_offset = args.hold_every // 2 - 1
+    if val_offset < 0 or val_offset >= args.hold_every:
+        raise SystemExit("--val-offset must be in [0, hold_every)")
+    if val_offset == args.hold_every - 1:
+        raise SystemExit("--val-offset must not overlap the test offset")
     if args.dst.exists():
-        raise SystemExit(f"Destination already exists: {args.dst}")
+        if not args.overwrite:
+            raise SystemExit(f"Destination already exists: {args.dst}")
+        if args.dst.is_symlink() or args.dst.is_file():
+            args.dst.unlink()
+        else:
+            shutil.rmtree(args.dst)
 
     transforms_path = args.src / "transforms.json"
     if not transforms_path.exists():
@@ -94,19 +120,26 @@ def main() -> None:
         preview = ", ".join(missing[:5])
         raise SystemExit(f"{len(missing)} selected frames are missing from sparse images: {preview}")
 
-    held_out = {
+    test_held_out = {
         frame["file_path"]
         for idx, frame in enumerate(frames)
         if idx % args.hold_every == args.hold_every - 1
     }
+    val_held_out = {
+        frame["file_path"]
+        for idx, frame in enumerate(frames)
+        if idx % args.hold_every == val_offset
+    }
+    held_out = test_held_out | val_held_out
     train = [frame["file_path"] for frame in frames if frame["file_path"] not in held_out]
-    val_test = [frame["file_path"] for frame in frames if frame["file_path"] in held_out]
+    val = [frame["file_path"] for frame in frames if frame["file_path"] in val_held_out]
+    test = [frame["file_path"] for frame in frames if frame["file_path"] in test_held_out]
 
     out_meta = dict(meta)
     out_meta["frames"] = frames
     out_meta["train_filenames"] = train
-    out_meta["val_filenames"] = val_test
-    out_meta["test_filenames"] = val_test
+    out_meta["val_filenames"] = val
+    out_meta["test_filenames"] = test
 
     args.dst.mkdir(parents=True)
     if args.copy_images:
@@ -123,20 +156,29 @@ def main() -> None:
         f.write(f"sparse_images: {make_relative_to_cwd(args.images)}\n")
         f.write(f"stride: {args.stride}\n")
         f.write(f"hold_every_sparse_frame: {args.hold_every}\n")
+        f.write(f"test_sparse_offset: {args.hold_every - 1}\n")
+        f.write(f"val_sparse_offset: {val_offset}\n")
         f.write(f"frames: {len(frames)}\n")
         f.write(f"train: {len(train)}\n")
-        f.write(f"val: {len(val_test)}\n")
-        f.write(f"test: {len(val_test)}\n")
-        f.write("\nval_test_filenames:\n")
-        for name in val_test:
+        f.write(f"val: {len(val)}\n")
+        f.write(f"test: {len(test)}\n")
+        f.write("\nval_filenames:\n")
+        for name in val:
+            f.write(f"  {name}\n")
+        f.write("\ntest_filenames:\n")
+        for name in test:
             f.write(f"  {name}\n")
 
     print(f"Wrote {args.dst}")
     print(f"frames: {len(frames)}")
     print(f"train: {len(train)}")
-    print(f"val/test: {len(val_test)}")
-    print("val/test filenames:")
-    for name in val_test:
+    print(f"val: {len(val)}")
+    print(f"test: {len(test)}")
+    print("val filenames:")
+    for name in val:
+        print(f"  {name}")
+    print("test filenames:")
+    for name in test:
         print(f"  {name}")
 
 

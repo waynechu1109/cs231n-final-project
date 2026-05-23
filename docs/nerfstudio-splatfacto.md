@@ -122,12 +122,19 @@ The split is:
 
 ```text
 88 total frames
-80 train frames
-8 validation frames
+71 train frames
+9 validation frames
 8 test frames
 ```
 
-The validation/test frames are:
+The validation frames are interleaved halfway between the held-out test frames:
+
+```text
+00000008.png, 00000028.png, 00000048.png, 00000068.png, 00000088.png,
+00000108.png, 00000128.png, 00000148.png, 00000168.png
+```
+
+The test frames keep the MipNeRF every-10 held-out rule:
 
 ```text
 00000018.png, 00000038.png, 00000058.png, 00000078.png,
