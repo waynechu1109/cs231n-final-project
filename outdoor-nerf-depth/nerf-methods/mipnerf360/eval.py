@@ -176,6 +176,17 @@ def main(unused_argv):
           rgb_cc = crop_fn(rgb_cc)
           rgb_gt = crop_fn(rgb_gt)
 
+        photo_error = np.abs(rgb - rgb_gt).mean(axis=-1)
+        photo_error_cc = np.abs(rgb_cc - rgb_gt).mean(axis=-1)
+
+        for prefix, err in [('photo_error', photo_error),
+                            ('photo_error_cc', photo_error_cc)]:
+          print(f'{prefix}_mean{"":18s} = {float(np.mean(err)):.6f}')
+          print(f'{prefix}_median{"":16s} = {float(np.median(err)):.6f}')
+          print(f'{prefix}_p75{"":20s} = {float(np.percentile(err, 75)):.6f}')
+          print(f'{prefix}_p90{"":20s} = {float(np.percentile(err, 90)):.6f}')
+          print(f'{prefix}_p95{"":20s} = {float(np.percentile(err, 95)):.6f}')
+          print(f'{prefix}_p99{"":20s} = {float(np.percentile(err, 99)):.6f}')
         metric = metric_harness(rgb, rgb_gt)
         metric_cc = metric_harness(rgb_cc, rgb_gt)
 

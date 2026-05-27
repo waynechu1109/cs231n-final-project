@@ -69,6 +69,10 @@ class Config:
   depth_sigma: float = 0.01 # uncertainty for depth loss
   eval_suffix: str = ''
   depth_scale: float = 1.0
+  use_photo_mask: bool = False
+  photo_mask_threshold: float = 0.12
+  photo_mask_mode: str = 'high'  # 'high': use depth where RGB error > threshold;
+  fixed_photo_mask_dir: str = ''
   auto_adjust_near_far: bool = False
   compute_normal_metrics: bool = False  # If True, load and compute normal MAE.
   gc_every: int = 10000  # The number of steps between garbage collections.
