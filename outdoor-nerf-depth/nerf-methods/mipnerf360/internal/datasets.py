@@ -759,6 +759,7 @@ class LLFF(Dataset):
           utils.DataSplit.TRAIN: train_indices,
       }
     indices = split_indices[self.split]
+    split_image_names = [image_names[i] for i in indices]
     # All per-image quantities must be re-indexed using the split indices.
     images = images[indices]
     poses = poses[indices]
@@ -770,6 +771,34 @@ class LLFF(Dataset):
       depths_sup = scale * depths_sup
       depths_sup = depths_sup[indices]
 
+      if config.fixed_photo_mask_dir and self.split == utils.DataSplit.TRAIN:
+        fixed_photo_mask_dir = config.fixed_photo_mask_dir
+        if not os.path.isabs(fixed_photo_mask_dir):
+          fixed_photo_mask_dir = os.path.join(self.data_dir, fixed_photo_mask_dir)
+
+        fixed_photo_mask_paths = [
+            os.path.join(fixed_photo_mask_dir, f) for f in split_image_names
+        ]
+
+        missing_masks = [x for x in fixed_photo_mask_paths if not utils.file_exists(x)]
+        if missing_masks:
+          raise ValueError(
+              f'Missing fixed photo mask files, e.g. {missing_masks[:5]}')
+
+        fixed_photo_masks = [utils.load_img(x) for x in fixed_photo_mask_paths]
+        fixed_photo_masks = np.stack(fixed_photo_masks, axis=0)
+
+        if fixed_photo_masks.ndim == 4:
+          fixed_photo_masks = fixed_photo_masks[..., 0]
+
+        fixed_photo_masks = fixed_photo_masks > 0
+        if fixed_photo_masks.shape != depths_sup.shape:
+          raise ValueError(
+              f'Fixed photo mask shape {fixed_photo_masks.shape} does not match '
+              f'depths_sup shape {depths_sup.shape}')
+
+        depths_sup[~fixed_photo_masks] = -256.
+
     if self.exposures is not None:
       self.exposures = self.exposures[indices]
     if config.rawnerf_mode:
@@ -777,6 +806,7 @@ class LLFF(Dataset):
         self.metadata[key] = self.metadata[key][indices]
 
     self.images = images
+    self.image_names = split_image_names
     if self._load_disps:
       self.disp_images = np.stack(depths, axis=0)
       self.disp_images_sup = np.stack(depths_sup, axis=0)
@@ -972,6 +1002,7 @@ class DTU(Dataset):
         utils.DataSplit.TRAIN: all_indices[all_indices % config.dtuhold != 0],
     }
     indices = split_indices[self.split]
+    split_image_names = [image_names[i] for i in indices]
 
     self.images = images[indices]
     self.height, self.width = images.shape[1:3]
