@@ -326,6 +326,13 @@ If export runs out of GPU memory, lower `--num-rays-per-batch`, for example to `
 
 Do not use the point cloud as a replacement for the Gaussian splat export. A point cloud stores sampled geometry and colors, while the Gaussian splat export stores the trained 3DGS representation itself.
 
+## View Training Results Through Tensorboard on Local Machine
+```bash
+# run on local!
+ssh -L 6006:localhost:6006 cs231n-final-project \
+  "cd /home/ubuntu/final_project/nerfstudio && source ~/miniconda3/etc/profile.d/conda.sh && conda activate nerfstudio && tensorboard --logdir outputs/kitti_seq02_0034_sparse_every2/splatfacto --port 6006"
+```
+
 ### Notes
 
 - `tiny-cuda-nn` is not required for `splatfacto`; it is mainly relevant for NeRF/hash-grid methods.
