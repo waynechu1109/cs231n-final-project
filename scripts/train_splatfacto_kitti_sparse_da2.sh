@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+export MAX_JOBS=1
+export TORCHDYNAMO_DISABLE=1
+
 # Train splatfacto with DA2 depth supervision on a sparse every-2 KITTI nerfstudio dataset.
 #
 # Default: KITTI seq02 / drive 0034. For another sequence, set KITTI_SEQ_DIR (paths are derived
@@ -41,6 +45,10 @@ LAMBDA_DEPTH="${LAMBDA_DEPTH:-0.05}"
 DEPTH_LOSS_TYPE="${DEPTH_LOSS_TYPE:-mse}"
 MAX_NUM_ITERATIONS="${MAX_NUM_ITERATIONS:-50000}"
 
+# Encode the full dataset dir name and depth-loss weight in the experiment name so
+# sweep results are easy to find: outputs/<EXP_NAME>/splatfacto-da2/<timestamp>/
+EXP_NAME="${EXP_NAME:-$(basename "${DATA_DIR}")_lambda${LAMBDA_DEPTH}}"
+
 DENSE_NERFSTUDIO="${DENSE_NERFSTUDIO:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}}"
 DEPTH_DIR="${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}"
 
@@ -76,6 +84,7 @@ echo "KITTI sequence:     ${KITTI_SEQ_DIR}"
 echo "Nerfstudio (sparse): ${NERFSTUDIO_SRC}"
 echo "Training data:      ${DATA_DIR}"
 echo "Depth supervision:  ${DEPTH_DIR}"
+echo "Experiment name:    ${EXP_NAME}"
 
 if [[ ! -f "${DATA_DIR}/transforms.json" ]]; then
   python "${SCRIPT_DIR}/make_nerfstudio_kitti_depth.py" \
@@ -90,6 +99,7 @@ cd "${NERFSTUDIO_DIR}"
 
 ns-train splatfacto-da2 \
   --data "${DATA_DIR}" \
+  --experiment-name "${EXP_NAME}" \
   --max-num-iterations "${MAX_NUM_ITERATIONS}" \
   --pipeline.model.lambda-depth "${LAMBDA_DEPTH}" \
   --pipeline.model.depth-loss-type "${DEPTH_LOSS_TYPE}" \

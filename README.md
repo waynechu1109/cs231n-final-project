@@ -224,6 +224,23 @@ conda activate nerfstudio
 bash scripts/train_splatfacto_kitti_sparse_da2.sh
 ```
 
+Batch / sweep Splatfacto DA2 over depth-loss weights (and datasets):
+
+```bash
+cd /home/ubuntu/final_project
+conda activate nerfstudio
+
+# Default: KITTISeq02, lambda_depth in {0.1, 0.15} (one run each, sequential)
+bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
+
+# Override the swept values without editing the script (space-separated lists):
+SWEEP_LAMBDAS="0.05 0.1 0.15 0.2" \
+SWEEP_SEQ_DIRS="KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
+```
+
+The wrapper calls `scripts/train_splatfacto_kitti_sparse_da2.sh` once per `(dataset × lambda)` combination. Each run gets its own experiment folder `outputs/<data_dir_name>_lambda<value>/splatfacto-da2/<timestamp>/` (e.g. `kitti_seq02_0034_sparse_every2_da2_lambda0.1`), and its full log is saved under `sweep_logs/`. A failing run does not abort the sweep; a pass/fail summary is printed at the end. Only datasets whose sparse nerfstudio dataset and depth maps are already built can be swept (seq02 is prebuilt; build others with `scripts/make_nerfstudio_kitti_sparse.py` first).
+
 Depth Anything V2 preprocessing:
 
 ```bash

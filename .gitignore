@@ -74,3 +74,6 @@ __external_build__/
 /Depth-Anything-V2/vis_depth/
 /Depth-Anything-V2/vis_video_depth/
 /Depth-Anything-V2/metric_depth/exp/
+
+*.txt
+*.log
