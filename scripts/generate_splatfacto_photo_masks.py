@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""
+Generate fixed photometric masks from a trained splatfacto / splatfacto-da2 checkpoint.
+
+  photo_error(u) = mean_c |render(u) - gt(u)|
+  mode=high: mask=1 where error > threshold (apply depth loss on high-error pixels)
+  mode=low:  mask=1 where error < threshold (apply depth loss on reliable pixels)
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+from PIL import Image
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+NERFSTUDIO_ROOT = PROJECT_ROOT / "nerfstudio"
+sys.path.insert(0, str(NERFSTUDIO_ROOT))
+
+from nerfstudio.utils.eval_utils import eval_setup  # noqa: E402
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Photometric masks from a splatfacto checkpoint.")
+    parser.add_argument(
+        "--load-config",
+        type=Path,
+        required=True,
+        help="Path to config.yml from a finished or partial splatfacto-da2 run.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory to write mask PNGs (filenames match dataset images).",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.12,
+        help="L1 RGB threshold in [0,1], matching MipNeRF photo_mask_threshold.",
+    )
+    parser.add_argument(
+        "--photo-mask-mode",
+        choices=("high", "low"),
+        default="high",
+        help="high: mask where error > threshold. low: mask where error < threshold.",
+    )
+    parser.add_argument(
+        "--load-step",
+        type=int,
+        default=None,
+        help="Checkpoint step (default: latest in config load_dir).",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _set_load_step(config):
+        if args.load_step is not None:
+            config.load_step = args.load_step
+        return config
+
+    _config, pipeline, _ckpt, step = eval_setup(
+        args.load_config,
+        test_mode="val",
+        update_config_callback=_set_load_step,
+    )
+    device = pipeline.device
+    train_dataset = pipeline.datamanager.train_dataset
+    pipeline.eval()
+    pipeline.model.eval()
+
+    keep_ratios = []
+    print(f"Checkpoint step {step}")
+    print(f"Train images: {len(train_dataset)}")
+    print(f"Threshold: {args.threshold}  mode: {args.photo_mask_mode}")
+    print(f"Writing to: {args.output_dir}")
+
+    with torch.no_grad():
+        for idx in range(len(train_dataset)):
+            batch = train_dataset.get_data(idx, image_type="float32")
+            camera = train_dataset.cameras[idx : idx + 1].to(device)
+            outputs = pipeline.model.get_outputs_for_camera(camera)
+            pred = outputs["rgb"].detach().cpu().numpy()
+            gt = batch["image"].cpu().numpy()
+            if pred.shape != gt.shape:
+                h = min(pred.shape[0], gt.shape[0])
+                w = min(pred.shape[1], gt.shape[1])
+                pred = pred[:h, :w]
+                gt = gt[:h, :w]
+
+            photo_error = np.abs(pred - gt).mean(axis=-1)
+            if args.photo_mask_mode == "high":
+                mask = photo_error > args.threshold
+            else:
+                mask = photo_error < args.threshold
+
+            keep_ratio = float(mask.mean())
+            keep_ratios.append(keep_ratio)
+
+            out_name = train_dataset.image_filenames[idx].name
+            out_path = args.output_dir / out_name
+            Image.fromarray((mask.astype(np.uint8) * 255)).save(out_path)
+
+            print(
+                f"{idx + 1:04d}/{len(train_dataset):04d} {out_name} "
+                f"keep_ratio={keep_ratio:.4f} err_mean={float(photo_error.mean()):.6f}"
+            )
+
+    print("Done.")
+    print(f"mean_keep_ratio={float(np.mean(keep_ratios)):.6f}")
+    print(f"median_keep_ratio={float(np.median(keep_ratios)):.6f}")
+
+
+if __name__ == "__main__":
+    main()

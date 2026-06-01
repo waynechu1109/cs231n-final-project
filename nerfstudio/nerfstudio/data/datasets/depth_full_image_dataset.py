@@ -7,36 +7,51 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
+import torch
+from PIL import Image
+
 from nerfstudio.data.datasets.base_dataset import InputDataset
-from nerfstudio.data.utils.data_utils import get_depth_image_from_path
+from nerfstudio.data.utils.data_utils import get_depth_image_from_path, get_image_mask_tensor_from_path
 
 
 class DepthFullImageDataset(InputDataset):
     """Dataset that returns images and depth maps for full-image trainers such as splatfacto."""
 
-    exclude_batch_keys_from_device = InputDataset.exclude_batch_keys_from_device + ["depth_image"]
+    exclude_batch_keys_from_device = InputDataset.exclude_batch_keys_from_device + [
+        "depth_image",
+        "photo_mask",
+    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.depth_filenames = self.metadata.get("depth_filenames")
+        self.photo_mask_filenames = self.metadata.get("photo_mask_filenames")
         self.depth_unit_scale_factor = self.metadata.get("depth_unit_scale_factor", 1e-3)
         self.metadata["dataparser_scale"] = self._dataparser_outputs.dataparser_scale
 
     def get_metadata(self, data: Dict) -> Dict:
-        if self.depth_filenames is None:
-            return {}
+        metadata: Dict = {}
+        if self.depth_filenames is not None:
+            filepath = self.depth_filenames[data["image_idx"]]
+            height = int(self._dataparser_outputs.cameras.height[data["image_idx"]])
+            width = int(self._dataparser_outputs.cameras.width[data["image_idx"]])
+            depth_image = get_depth_image_from_path(
+                filepath=Path(filepath),
+                height=height,
+                width=width,
+                scale_factor=self.depth_unit_scale_factor,
+            )
+            depth_crop_range = float(self.metadata.get("depth_crop_range", 0.0))
+            if depth_crop_range > 0.0:
+                depth_image[depth_image > depth_crop_range] = 0.0
+            depth_image = depth_image * self._dataparser_outputs.dataparser_scale
+            metadata["depth_image"] = depth_image
 
-        filepath = self.depth_filenames[data["image_idx"]]
-        height = int(self._dataparser_outputs.cameras.height[data["image_idx"]])
-        width = int(self._dataparser_outputs.cameras.width[data["image_idx"]])
-        depth_image = get_depth_image_from_path(
-            filepath=Path(filepath),
-            height=height,
-            width=width,
-            scale_factor=self.depth_unit_scale_factor,
-        )
-        depth_crop_range = float(self.metadata.get("depth_crop_range", 0.0))
-        if depth_crop_range > 0.0:
-            depth_image[depth_image > depth_crop_range] = 0.0
-        depth_image = depth_image * self._dataparser_outputs.dataparser_scale
-        return {"depth_image": depth_image}
+        if self.photo_mask_filenames is not None:
+            mask_filepath = self.photo_mask_filenames[data["image_idx"]]
+            photo_mask = get_image_mask_tensor_from_path(
+                filepath=mask_filepath, scale_factor=self.scale_factor
+            )
+            metadata["photo_mask"] = photo_mask
+
+        return metadata
