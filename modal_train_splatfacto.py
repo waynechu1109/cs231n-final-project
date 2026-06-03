@@ -335,8 +335,15 @@ def sweep(
         print(f"  [{i+1}/{total}] seq={Path(c['kitti_seq_dir']).name[:20]}...  "
               f"lambda={c['lambda_depth']}  loss={c['depth_loss_type']}")
 
-    # starmap fans out all configs as parallel Modal containers
-    for result in train.starmap(configs):
+    # Modal 1.x starmap does *item, so dicts expand to keys — use tuples instead.
+    # Order matches train(): kitti_seq_dir, lambda_depth, depth_loss_type, depth_sup_type,
+    #                        max_num_iterations, photo_mask_dir, photo_mask_mode, photo_mask_threshold
+    for result in train.starmap([
+        (c['kitti_seq_dir'], c['lambda_depth'], c['depth_loss_type'],
+         "da2", c['max_num_iterations'], c['photo_mask_dir'],
+         c['photo_mask_mode'], 0.12)
+        for c in configs
+    ]):
         pass
 
 
@@ -461,6 +468,69 @@ def sweep_threshold(
         pass
 
     print("\n[Stage 2] All threshold sweep runs complete.")
+
+
+# ---------------------------------------------------------------------------
+# sweep_lambda_threshold — sweep both lambda × threshold in parallel
+#
+# Assumes nomask base runs already exist for each lambda (run sweep first).
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::sweep_lambda_threshold \
+#     --lambdas "0.0 0.1 0.15" \
+#     --thresholds "0.22" \
+#     --photo-mask-mode low
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def sweep_lambda_threshold(
+    lambdas: str = "0.0 0.1 0.15",
+    thresholds: str = "0.22",
+    photo_mask_mode: str = "low",
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    depth_loss_type: str = "mse",
+    depth_sup_type: str = "da2",
+    max_num_iterations: int = 50000,
+):
+    lambda_list = [float(v) for v in lambdas.split()]
+    threshold_list = [float(t) for t in thresholds.split()]
+    slug = _derive_slug(kitti_seq_dir)
+
+    # All (lambda, threshold) combinations
+    combos = [(lam, t) for lam in lambda_list for t in threshold_list]
+
+    print(f"\nLambdas:    {lambda_list}")
+    print(f"Thresholds: {threshold_list}")
+    print(f"Total runs: {len(combos)} mask-gen + {len(combos)} retrain")
+
+    # ---- Stage 1: generate masks for every (lambda, threshold) in parallel --
+    # Each lambda has its own nomask base checkpoint.
+    print(f"\n[Stage 1] Generating {len(combos)} mask sets in parallel...")
+    base_exp_names = [
+        f"{slug}_sparse_every2_{depth_sup_type}_lambda{lam}_nomask_{max_num_iterations}"
+        for lam, _ in combos
+    ]
+    for i, (name, (lam, t)) in enumerate(zip(base_exp_names, combos)):
+        print(f"  [{i+1}/{len(combos)}] base={name}  threshold={t}")
+
+    mask_dirs = list(generate_masks.starmap([
+        (base_exp, t, photo_mask_mode)
+        for base_exp, (_, t) in zip(base_exp_names, combos)
+    ]))
+
+    print("\n[Stage 1] Done. Mask directories:")
+    for d in mask_dirs:
+        print(f"  {d}")
+
+    # ---- Stage 2: retrain all combinations in parallel ----------------------
+    print(f"\n[Stage 2] Launching {len(combos)} masked retrains in parallel...")
+    for result in train.starmap([
+        (kitti_seq_dir, lam, depth_loss_type, depth_sup_type,
+         max_num_iterations, mask_dir, photo_mask_mode, t)
+        for (lam, t), mask_dir in zip(combos, mask_dirs)
+    ]):
+        pass
+
+    print("\n[Stage 2] All lambda × threshold sweep runs complete.")
 
 
 # ---------------------------------------------------------------------------

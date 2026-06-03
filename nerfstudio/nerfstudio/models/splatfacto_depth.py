@@ -82,12 +82,13 @@ class SplatfactoDepthModel(SplatfactoModel):
         if depth_gt.dim() == 3 and depth_gt.shape[-1] == 1:
             depth_gt = depth_gt[..., 0]
 
-        pred = pred_depth[mask]
-        gt = depth_gt[mask]
+        # Average over ALL pixels (mask zeros out invalid ones), matching MipNeRF:
+        #   ((disp_mask * pred - disp_mask * gt) ** 2).mean()
+        mask_float = mask.float()
         if self.config.depth_loss_type == "mse":
-            return torch.mean((pred - gt) ** 2)
+            return torch.mean((mask_float * (pred_depth - depth_gt)) ** 2)
         if self.config.depth_loss_type == "l1":
-            return torch.mean(torch.abs(pred - gt))
+            return torch.mean(mask_float * torch.abs(pred_depth - depth_gt))
         raise ValueError(f"Unknown depth loss type: {self.config.depth_loss_type}")
 
     def get_metrics_dict(self, outputs, batch) -> Dict[str, torch.Tensor]:
