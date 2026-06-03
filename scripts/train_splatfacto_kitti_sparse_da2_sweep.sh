@@ -44,7 +44,7 @@ if [[ -n "${SWEEP_SEQ_DIRS:-}" ]]; then
 fi
 
 # Values of --pipeline.model.lambda-depth to try, one training run each.
-LAMBDAS=(0.1 0.15)
+LAMBDAS=(0.0)
 # Allow overriding from the environment: SWEEP_LAMBDAS="0.05 0.1 0.2"
 if [[ -n "${SWEEP_LAMBDAS:-}" ]]; then
   read -r -a LAMBDAS <<< "${SWEEP_LAMBDAS}"
