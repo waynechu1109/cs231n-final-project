@@ -184,6 +184,7 @@ The original long README has been split into focused guides:
 | MipNeRF-360 KITTI setup and training | [docs/mipnerf360-kitti.md](docs/mipnerf360-kitti.md) |
 | Nerfstudio Splatfacto dense/sparse training | [docs/nerfstudio-splatfacto.md](docs/nerfstudio-splatfacto.md) |
 | Nerfstudio Splatfacto DA2 depth supervision | [docs/nerfstudio-splatfacto-da2.md](docs/nerfstudio-splatfacto-da2.md) |
+| **Modal cloud training (splatfacto-da2 sweep)** | [docs/modal-splatfacto.md](docs/modal-splatfacto.md) |
 | Depth Anything V2 depth-supervision pipeline | [docs/depth-anything-v2.md](docs/depth-anything-v2.md) |
 | NeRF++ and Instant-NGP Depth notes | [docs/other-methods.md](docs/other-methods.md) |
 | Troubleshooting and citation | [docs/troubleshooting.md](docs/troubleshooting.md) |
@@ -240,6 +241,35 @@ bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
 ```
 
 The wrapper calls `scripts/train_splatfacto_kitti_sparse_da2.sh` once per `(dataset × lambda)` combination. Each run gets its own experiment folder `outputs/<data_dir_name>_lambda<value>/splatfacto-da2/<timestamp>/` (e.g. `kitti_seq02_0034_sparse_every2_da2_lambda0.1`), and its full log is saved under `sweep_logs/`. A failing run does not abort the sweep; a pass/fail summary is printed at the end. Only datasets whose sparse nerfstudio dataset and depth maps are already built can be swept (seq02 is prebuilt; build others with `scripts/make_nerfstudio_kitti_sparse.py` first).
+
+Modal cloud training — single run (A10G, detached):
+
+```bash
+pip install modal
+modal setup          # one-time auth
+modal run --detach modal_train_splatfacto.py::main
+```
+
+Modal lambda sweep (parallel A10G containers):
+
+```bash
+modal run --detach modal_train_splatfacto.py::sweep --lambdas "0.0 0.05 0.1 0.2"
+```
+
+Eval a completed Modal run:
+
+```bash
+modal run modal_train_splatfacto.py::run_eval --lambda-depth 0.05
+```
+
+Download outputs from Modal volume:
+
+```bash
+modal volume get nerf-outputs <exp_name> ./local_outputs
+tensorboard --logdir ./local_outputs/<exp_name>/splatfacto-da2/<timestamp>
+```
+
+See [docs/modal-splatfacto.md](docs/modal-splatfacto.md) for full setup, dataset upload, sweep options, known issues, and cost estimates.
 
 Depth Anything V2 preprocessing:
 

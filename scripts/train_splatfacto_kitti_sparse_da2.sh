@@ -53,12 +53,17 @@ PHOTO_MASK_DIR="${PHOTO_MASK_DIR:-}"
 PHOTO_MASK_THRESHOLD="${PHOTO_MASK_THRESHOLD:-0.12}"
 PHOTO_MASK_MODE="${PHOTO_MASK_MODE:-high}"
 
-# Encode the full dataset dir name and depth-loss weight in the experiment name so
-# sweep results are easy to find: outputs/<EXP_NAME>/splatfacto-da2/<timestamp>/
-EXP_NAME="${EXP_NAME:-$(basename "${DATA_DIR}")_lambda${LAMBDA_DEPTH}}"
+# Naming mirrors MipNeRF sweep convention:
+#   {ds_tag}_sparse_every2_{sup_type}_lambda{lambda}_{mode}{thresh_tag}_{iters}
+# e.g. kitti_seq02_0034_sparse_every2_da2_lambda0.05_low012_50000
+#      kitti_seq02_0034_sparse_every2_da2_lambda0.05_nomask_50000
+THRESH_TAG="${PHOTO_MASK_THRESHOLD//./}"   # 0.12 -> "012"
 if [[ -n "${PHOTO_MASK_DIR}" ]]; then
-  EXP_NAME="${EXP_NAME}_photomask_${PHOTO_MASK_MODE}"
+  MASK_LABEL="${PHOTO_MASK_MODE}${THRESH_TAG}"
+else
+  MASK_LABEL="nomask"
 fi
+EXP_NAME="${EXP_NAME:-${SEQ_SLUG}_sparse_every2_${DEPTH_SUP_TYPE}_lambda${LAMBDA_DEPTH}_${MASK_LABEL}_${MAX_NUM_ITERATIONS}}"
 
 DENSE_NERFSTUDIO="${DENSE_NERFSTUDIO:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}}"
 DEPTH_DIR="${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}"
