@@ -5,7 +5,7 @@ Splatfacto augmented with depth supervised training.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Literal, Tuple, Type
+from typing import Dict, Literal, Optional, Tuple, Type
 
 import torch
 
@@ -26,6 +26,8 @@ class SplatfactoDepthModelConfig(SplatfactoModelConfig):
     """Ignore supervision depth below this value in meters (KITTI invalid pixels use raw < 2)."""
     output_depth_during_training: bool = True
     """Must be True so rendered depth is available for the depth loss."""
+    photo_mask_mode: Literal["high", "low"] = "high"
+    """MipNeRF-style photometric mask: high=supervise depth where RGB L1 > threshold."""
 
 
 class SplatfactoDepthModel(SplatfactoModel):
@@ -33,17 +35,52 @@ class SplatfactoDepthModel(SplatfactoModel):
 
     config: SplatfactoDepthModelConfig
 
-    def _get_depth_supervision_mask(self, depth_gt: torch.Tensor) -> torch.Tensor:
+    def _depth_valid_mask(self, depth_gt: torch.Tensor) -> torch.Tensor:
         min_valid = self.config.depth_min_valid
         if hasattr(self, "metadata") and self.metadata is not None:
             dataparser_scale = float(self.metadata.get("dataparser_scale", 1.0))
             min_valid = self.config.depth_min_valid * dataparser_scale
-        return depth_gt[..., 0] > min_valid
+        if depth_gt.dim() == 3:
+            depth_gt = depth_gt[..., 0]
+        return depth_gt > min_valid
 
-    def _compute_depth_loss(self, pred_depth: torch.Tensor, depth_gt: torch.Tensor) -> torch.Tensor:
-        mask = self._get_depth_supervision_mask(depth_gt)
+    def _photo_mask(self, batch: Dict[str, torch.Tensor]) -> Optional[torch.Tensor]:
+        """Binary mask from fixed photometric-error PNGs (1 = apply depth loss at pixel)."""
+        if "photo_mask" not in batch:
+            return None
+        photo_mask = batch["photo_mask"]
+        if photo_mask.dim() == 3:
+            photo_mask = photo_mask[..., 0]
+        return photo_mask > 0.5
+
+    def _get_depth_supervision_mask(
+        self, depth_gt: torch.Tensor, batch: Optional[Dict[str, torch.Tensor]] = None
+    ) -> torch.Tensor:
+        mask = self._depth_valid_mask(depth_gt)
+        photo_mask = None if batch is None else self._photo_mask(batch)
+        if photo_mask is not None:
+            if photo_mask.shape != mask.shape:
+                h = min(photo_mask.shape[0], mask.shape[0])
+                w = min(photo_mask.shape[1], mask.shape[1])
+                mask = mask[:h, :w]
+                photo_mask = photo_mask[:h, :w]
+            mask = mask & photo_mask
+        return mask
+
+    def _compute_depth_loss(
+        self,
+        pred_depth: torch.Tensor,
+        depth_gt: torch.Tensor,
+        batch: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> torch.Tensor:
+        mask = self._get_depth_supervision_mask(depth_gt, batch)
         if not torch.any(mask):
             return pred_depth.new_zeros(())
+
+        if pred_depth.dim() == 3 and pred_depth.shape[-1] == 1:
+            pred_depth = pred_depth[..., 0]
+        if depth_gt.dim() == 3 and depth_gt.shape[-1] == 1:
+            depth_gt = depth_gt[..., 0]
 
         pred = pred_depth[mask]
         gt = depth_gt[mask]
@@ -58,11 +95,11 @@ class SplatfactoDepthModel(SplatfactoModel):
         if self.training and "depth_image" in batch and outputs.get("depth") is not None:
             depth_gt = self._downscale_if_required(batch["depth_image"].to(self.device))
             pred_depth = outputs["depth"]
-            if pred_depth.dim() == 3 and pred_depth.shape[-1] == 1:
-                pred_depth = pred_depth[..., 0]
-            if depth_gt.dim() == 3 and depth_gt.shape[-1] == 1:
-                depth_gt = depth_gt[..., 0]
-            metrics_dict["depth_loss"] = self._compute_depth_loss(pred_depth, depth_gt)
+            metrics_dict["depth_loss"] = self._compute_depth_loss(pred_depth, depth_gt, batch)
+            photo_mask = self._photo_mask(batch)
+            if photo_mask is not None:
+                depth_valid = self._depth_valid_mask(depth_gt)
+                metrics_dict["photo_mask_fraction"] = photo_mask[depth_valid].float().mean()
         return metrics_dict
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None) -> Dict[str, torch.Tensor]:
@@ -83,7 +120,7 @@ class SplatfactoDepthModel(SplatfactoModel):
             ground_truth_depth = ground_truth_depth.unsqueeze(-1)
 
         ground_truth_depth_colormap = colormaps.apply_depth_colormap(ground_truth_depth)
-        valid = self._get_depth_supervision_mask(ground_truth_depth)
+        valid = self._get_depth_supervision_mask(ground_truth_depth, batch)
         if torch.any(valid):
             near_plane = float(torch.min(ground_truth_depth[valid]).cpu())
             far_plane = float(torch.max(ground_truth_depth[valid]).cpu())

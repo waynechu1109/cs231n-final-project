@@ -671,6 +671,7 @@ method_configs["splatfacto-da2"] = TrainerConfig(
             lambda_depth=0.05,
             depth_loss_type="mse",
             output_depth_during_training=True,
+            photo_mask_mode="high",
         ),
     ),
     optimizers={

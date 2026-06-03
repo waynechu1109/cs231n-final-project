@@ -158,6 +158,48 @@ ns-export gaussian-splat \
 
 Tensorboard logs include `depth_loss`, `depth_mse`, and `depth_mae` on eval images when depth maps are present.
 
+## Photometric Masked Depth Loss (MipNeRF-style)
+
+MipNeRF-360 can gate depth supervision with fixed photometric-error masks (`generate_fixed_photo_masks.py` + `fixed_photo_mask_dir`). The same workflow is available for `splatfacto-da2`:
+
+1. **Stage 1 — RGB + unmasked depth:** train without masks (default `train_splatfacto_kitti_sparse_da2.sh`).
+2. **Generate masks** from the checkpoint (train views only):
+
+```bash
+conda activate nerfstudio
+cd /home/ubuntu/final_project
+
+python scripts/generate_splatfacto_photo_masks.py \
+  --load-config nerfstudio/outputs/<exp>/splatfacto-da2/<timestamp>/config.yml \
+  --output-dir data/kitti/.../photo_masks_splat_high \
+  --threshold 0.12 \
+  --photo-mask-mode high
+```
+
+3. **Stage 2 — masked depth loss:** attach masks and retrain:
+
+```bash
+PHOTO_MASK_DIR=data/kitti/.../photo_masks_splat_high \
+PHOTO_MASK_MODE=high \
+bash scripts/train_splatfacto_kitti_sparse_da2.sh
+```
+
+You can reuse **MipNeRF mask PNGs** directly if filenames match the KITTI frame names in `transforms.json`:
+
+```bash
+PHOTO_MASK_DIR=/path/to/mipnerf/fixed_photo_masks \
+bash scripts/train_splatfacto_kitti_sparse_da2.sh
+```
+
+| Setting | MipNeRF | Splatfacto |
+|---|---|---|
+| Threshold | `Config.photo_mask_threshold` | `--threshold` in generate script |
+| Mode | `Config.photo_mask_mode` (`high` / `low`) | `--photo-mask-mode` / `PHOTO_MASK_MODE` |
+| Mask files | `fixed_photo_mask_dir/<image_name>` | `photo_masks/<image_name>` in nerfstudio data |
+| Depth loss | Only where mask is True | `depth_loss` × `photo_mask` × valid depth |
+
+`high` (default): depth loss on pixels with **high** RGB error (same as the project diagram). `low`: depth loss only on **reliable** low-error pixels.
+
 ## Comparison With RGB-Only Splatfacto
 
 | Run | Method | Data |
@@ -171,6 +213,7 @@ Compare against the corresponding MipNeRF runs:
 |---|---|
 | `Config.depth_sup_type='rgbonly'` | `ns-train splatfacto` |
 | `Config.depth_sup_type='da2'` | `ns-train splatfacto-da2` |
+| `fixed_photo_mask_dir` + masked depth | `PHOTO_MASK_DIR` + `splatfacto-da2` |
 
 ## Notes
 

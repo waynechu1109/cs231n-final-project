@@ -112,6 +112,8 @@ def _undistort_image(
 
         if "depth_image" in data:
             data["depth_image"] = data["depth_image"][y : y + h, x : x + w]
+        if "photo_mask" in data:
+            data["photo_mask"] = data["photo_mask"][y : y + h, x : x + w]
         if "mask" in data:
             mask = data["mask"].numpy()
             mask = mask.astype(np.uint8) * 255

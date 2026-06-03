@@ -14,6 +14,11 @@ export TORCHDYNAMO_DISABLE=1
 #   1. Dense nerfstudio: data/nerfstudio/kitti_seq05_0018/transforms.json
 #   2. Sparse nerfstudio: data/nerfstudio/kitti_seq05_0018_sparse_every2 (see scripts/make_nerfstudio_kitti_sparse.py)
 #   3. Depth maps: ${KITTI_SEQ_DIR}/depths_da2 (see docs/depth-anything-v2.md)
+#
+# Optional photometric masked depth:
+#   1) Train once without masks (default below).
+#   2) bash scripts/generate_splatfacto_photo_masks.py --load-config <config.yml> --output-dir <masks>
+#   3) PHOTO_MASK_DIR=<masks> bash scripts/train_splatfacto_kitti_sparse_da2.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,10 +49,16 @@ DEPTH_SUP_TYPE="${DEPTH_SUP_TYPE:-da2}"
 LAMBDA_DEPTH="${LAMBDA_DEPTH:-0.05}"
 DEPTH_LOSS_TYPE="${DEPTH_LOSS_TYPE:-mse}"
 MAX_NUM_ITERATIONS="${MAX_NUM_ITERATIONS:-50000}"
+PHOTO_MASK_DIR="${PHOTO_MASK_DIR:-}"
+PHOTO_MASK_THRESHOLD="${PHOTO_MASK_THRESHOLD:-0.12}"
+PHOTO_MASK_MODE="${PHOTO_MASK_MODE:-high}"
 
 # Encode the full dataset dir name and depth-loss weight in the experiment name so
 # sweep results are easy to find: outputs/<EXP_NAME>/splatfacto-da2/<timestamp>/
 EXP_NAME="${EXP_NAME:-$(basename "${DATA_DIR}")_lambda${LAMBDA_DEPTH}}"
+if [[ -n "${PHOTO_MASK_DIR}" ]]; then
+  EXP_NAME="${EXP_NAME}_photomask_${PHOTO_MASK_MODE}"
+fi
 
 DENSE_NERFSTUDIO="${DENSE_NERFSTUDIO:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}}"
 DEPTH_DIR="${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}"
@@ -95,12 +106,28 @@ if [[ ! -f "${DATA_DIR}/transforms.json" ]]; then
     --overwrite
 fi
 
+if [[ -n "${PHOTO_MASK_DIR}" ]]; then
+  if [[ ! -d "${PHOTO_MASK_DIR}" ]]; then
+    echo "Missing PHOTO_MASK_DIR: ${PHOTO_MASK_DIR}" >&2
+    exit 1
+  fi
+  python "${SCRIPT_DIR}/attach_nerfstudio_photo_masks.py" \
+    --data-dir "${DATA_DIR}" \
+    --mask-dir "${PHOTO_MASK_DIR}" \
+    --overwrite
+  echo "Photometric masks: ${PHOTO_MASK_DIR} (mode=${PHOTO_MASK_MODE})"
+fi
+
 cd "${NERFSTUDIO_DIR}"
 
-ns-train splatfacto-da2 \
-  --data "${DATA_DIR}" \
-  --experiment-name "${EXP_NAME}" \
-  --max-num-iterations "${MAX_NUM_ITERATIONS}" \
-  --pipeline.model.lambda-depth "${LAMBDA_DEPTH}" \
-  --pipeline.model.depth-loss-type "${DEPTH_LOSS_TYPE}" \
+NS_ARGS=(
+  --data "${DATA_DIR}"
+  --experiment-name "${EXP_NAME}"
+  --max-num-iterations "${MAX_NUM_ITERATIONS}"
+  --pipeline.model.lambda-depth "${LAMBDA_DEPTH}"
+  --pipeline.model.depth-loss-type "${DEPTH_LOSS_TYPE}"
+  --pipeline.model.photo-mask-mode "${PHOTO_MASK_MODE}"
   --vis tensorboard
+)
+
+ns-train splatfacto-da2 "${NS_ARGS[@]}"
