@@ -48,7 +48,7 @@ Important subfolders:
 
 ```text
 images/          RGB images
-depths_gt/       KITTI GT / dense GT depth
+depths_gt/       KITTI GT / dense GT depth (LiDAR; not used on Mip-360 sparse — see [mip360-bicycle-sparse.md](mip360-bicycle-sparse.md))
 depths_da2_npy/  raw Depth Anything V2 predictions, saved as .npy
 depths_da2/      scale-shift aligned DA2 depth, saved as KITTI-style 16-bit PNG
 logs/            training outputs
@@ -105,6 +105,39 @@ Current alignment result:
 ```text
 Mean alignment Abs Error on valid LiDAR pixels: 4.2195 m
 ```
+
+### Mip-NeRF 360 bicycle (COLMAP reference, no LiDAR)
+
+Mip-360 sparse scenes have **no** `depths_gt/` (no KITTI LiDAR). Use COLMAP sparse depth as the align reference:
+
+```text
+data/mip360_sparse/bicycle/
+  images/
+  sparse/0/
+  depths_da2_npy/   # raw DA2
+  depths_colmap/    # from export_colmap_depths.py (align reference)
+  depths_da2/       # aligned supervision for training
+```
+
+One-shot align (from repo root):
+
+```bash
+SCENE_DIR=data/mip360_sparse/bicycle bash scripts/align_da2_mip360_colmap.sh
+```
+
+Or manually with `--ref-depth-dir` (not `--gt-depth-dir`):
+
+```bash
+python align_da2_to_kitti.py \
+  --da2-npy-dir data/mip360_sparse/bicycle/depths_da2_npy \
+  --ref-depth-dir data/mip360_sparse/bicycle/depths_colmap \
+  --out-dir data/mip360_sparse/bicycle/depths_da2 \
+  --max-depth 80
+```
+
+Then prep nerfstudio splits: `SCENE=bicycle bash scripts/prepare_mip360_sparse_scene.sh`
+
+Full pipeline: [mip360-bicycle-sparse.md](mip360-bicycle-sparse.md)
 
 ### Train DA2-supervised MipNeRF-360
 

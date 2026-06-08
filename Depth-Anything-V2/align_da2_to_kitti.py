@@ -29,13 +29,18 @@ def fit_scale_shift(pred, gt, mask):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Per-frame scale-shift align DA2 to a reference depth folder (KITTI LiDAR or COLMAP)."
+    )
     parser.add_argument("--da2-npy-dir", required=True)
-    parser.add_argument("--gt-depth-dir", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--max-depth", type=float, default=80.0)
     parser.add_argument("--min-depth", type=float, default=1.0)
+    ref = parser.add_mutually_exclusive_group(required=True)
+    ref.add_argument("--gt-depth-dir", help="KITTI-style reference PNGs (e.g. LiDAR depths_gt)")
+    ref.add_argument("--ref-depth-dir", help="Same layout; use for COLMAP (e.g. depths_colmap)")
     args = parser.parse_args()
+    ref_depth_dir = args.gt_depth_dir or args.ref_depth_dir
 
     os.makedirs(args.out_dir, exist_ok=True)
 
@@ -47,7 +52,7 @@ def main():
         stem = os.path.splitext(f)[0]
 
         pred = np.load(os.path.join(args.da2_npy_dir, f)).astype(np.float32)
-        gt_path = os.path.join(args.gt_depth_dir, stem + ".png")
+        gt_path = os.path.join(ref_depth_dir, stem + ".png")
         gt = read_kitti_depth_png(gt_path)
 
         if pred.shape != gt.shape:
@@ -63,7 +68,7 @@ def main():
         a, b = fit_scale_shift(pred, gt, mask)
 
         if a is None:
-            print(f"Skip {stem}: too few valid GT depth points")
+            print(f"Skip {stem}: too few valid reference depth points")
             continue
 
         aligned = a * pred + b
@@ -79,7 +84,7 @@ def main():
 
     print(f"Done. Saved to {args.out_dir}")
     if len(errors) > 0:
-        print(f"Mean alignment Abs Error on valid LiDAR pixels: {np.mean(errors):.4f} m")
+        print(f"Mean alignment abs error on valid reference pixels: {np.mean(errors):.4f}")
 
 
 if __name__ == "__main__":

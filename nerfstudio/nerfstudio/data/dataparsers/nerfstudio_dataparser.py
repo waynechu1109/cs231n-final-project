@@ -327,7 +327,11 @@ class Nerfstudio(DataParser):
         )
 
         assert self.downscale_factor is not None
-        cameras.rescale_output_resolution(scaling_factor=1.0 / self.downscale_factor)
+        # Mip-NeRF 360 packs use rounded 4x JPEGs (e.g. 1237x822); floor would be 1236x821.
+        cameras.rescale_output_resolution(
+            scaling_factor=1.0 / self.downscale_factor,
+            scale_rounding_mode="round",
+        )
 
         # The naming is somewhat confusing, but:
         # - transform_matrix contains the transformation to dataparser output coordinates from saved coordinates.

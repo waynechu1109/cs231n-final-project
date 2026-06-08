@@ -5,8 +5,8 @@ This guide covers running `splatfacto-da2` training and evaluation on Modal clou
 ## One-Time Setup
 
 ```bash
-pip install modal
-modal setup          # opens browser for authentication
+pip install modal 
+conda modal setup          # opens browser for authentication
 modal volume create kitti-nerf-data
 modal volume create nerf-outputs
 ```
@@ -52,6 +52,23 @@ nerf-outputs/
         events.out.tfevents.*   ← tensorboard logs
         eval_output.json        ← written by run_eval
 ```
+
+## Two pipelines (`--dataset-family`)
+
+| | **KITTI** (default) | **Mip-360 bicycle** |
+|---|---------------------|---------------------|
+| Flag | `dataset_family=kitti` (default) | `--dataset-family mip360 --mip360-scene bicycle` |
+| Scene data on volume | `kitti/.../sparse_every2/.../images`, `depths_da2` | `mip360_sparse/bicycle/images`, `depths_da2` |
+| Nerfstudio transforms | `nerfstudio/kitti_seq02_0034_sparse_every2/` | `nerfstudio/bicycle_sparse/` (JSON only is OK) |
+| Built on Modal | `..._sparse_every2_da2` | `bicycle_sparse_da2` (do not upload `_da2` from Mac) |
+| Split | Sparse every-2 frames | Bicycle holdout every 10th (in `transforms.json`) |
+| Depth GT | KITTI LiDAR `depths_gt` (MipNeRF) | COLMAP pseudo-GT locally; Modal uses `depths_da2` only |
+| Exp name prefix | `kitti_seq02_0034_sparse_every2_...` | `bicycle_sparse_da2_...` |
+| Train resolution | Full-res (KITTI ~375×1242) | **4× downscale** (`images_4/` + `downscale-factor 4`; `depths_4` → `depths_da2` symlink, resized at load) |
+
+Same entrypoints (`main`, `sweep`, `sweep_lambda_threshold`) — always pass the right `--dataset-family`.
+
+Mip-360 details: [mip360-bicycle-sparse.md](mip360-bicycle-sparse.md).
 
 ## Training
 

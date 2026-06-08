@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Literal, Optional, Tuple, Type
 
 import torch
+import torch.nn.functional as F
 
 from nerfstudio.models.splatfacto import SplatfactoModel, SplatfactoModelConfig
 from nerfstudio.utils import colormaps
@@ -44,26 +45,36 @@ class SplatfactoDepthModel(SplatfactoModel):
             depth_gt = depth_gt[..., 0]
         return depth_gt > min_valid
 
-    def _photo_mask(self, batch: Dict[str, torch.Tensor]) -> Optional[torch.Tensor]:
-        """Binary mask from fixed photometric-error PNGs (1 = apply depth loss at pixel)."""
+    def _photo_mask_aligned(
+        self, batch: Dict[str, torch.Tensor], depth_gt: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        """Binary mask aligned to depth_gt resolution (masks may be lower-res PNGs)."""
         if "photo_mask" not in batch:
             return None
-        photo_mask = batch["photo_mask"]
+        photo_mask = batch["photo_mask"].to(self.device)
         if photo_mask.dim() == 3:
             photo_mask = photo_mask[..., 0]
-        return photo_mask > 0.5
+        mask = photo_mask > 0.5
+        if depth_gt.dim() == 3:
+            depth_gt = depth_gt[..., 0]
+        target_h, target_w = depth_gt.shape[:2]
+        if mask.shape[0] != target_h or mask.shape[1] != target_w:
+            mask = (
+                F.interpolate(
+                    mask.float()[None, None],
+                    size=(target_h, target_w),
+                    mode="nearest",
+                )[0, 0]
+                > 0.5
+            )
+        return mask
 
     def _get_depth_supervision_mask(
         self, depth_gt: torch.Tensor, batch: Optional[Dict[str, torch.Tensor]] = None
     ) -> torch.Tensor:
         mask = self._depth_valid_mask(depth_gt)
-        photo_mask = None if batch is None else self._photo_mask(batch)
+        photo_mask = None if batch is None else self._photo_mask_aligned(batch, depth_gt)
         if photo_mask is not None:
-            if photo_mask.shape != mask.shape:
-                h = min(photo_mask.shape[0], mask.shape[0])
-                w = min(photo_mask.shape[1], mask.shape[1])
-                mask = mask[:h, :w]
-                photo_mask = photo_mask[:h, :w]
             mask = mask & photo_mask
         return mask
 
@@ -97,7 +108,7 @@ class SplatfactoDepthModel(SplatfactoModel):
             depth_gt = self._downscale_if_required(batch["depth_image"].to(self.device))
             pred_depth = outputs["depth"]
             metrics_dict["depth_loss"] = self._compute_depth_loss(pred_depth, depth_gt, batch)
-            photo_mask = self._photo_mask(batch)
+            photo_mask = self._photo_mask_aligned(batch, depth_gt)
             if photo_mask is not None:
                 depth_valid = self._depth_valid_mask(depth_gt)
                 metrics_dict["photo_mask_fraction"] = photo_mask[depth_valid].float().mean()
