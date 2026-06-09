@@ -38,7 +38,7 @@ For KITTI, reference depth comes from projected LiDAR points. For Mip-NeRF-360 B
 
 Rather than applying depth loss uniformly, we restrict supervision to pixels where the RGB-only baseline is already reliable. A per-pixel photometric error map is computed from a pre-trained RGB-only model:
 
-$$e(u) = \frac{1}{3} \sum_{c \in \{R,G,B\}} \left| \hat{I}_c(u) - I_c(u) \right|$$
+$$e(u) = \frac{1}{3} \sum_{c \in \lbrace R,G,B \rbrace} \left| \hat{I}_c(u) - I_c(u) \right|$$
 
 Pixels with $e(u) < \tau$ form the binary reliability mask $M(u)$. This mask is fixed for the duration of depth-supervised training.
 
