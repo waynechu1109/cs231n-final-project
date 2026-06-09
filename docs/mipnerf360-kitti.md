@@ -104,7 +104,7 @@ The depth-supervised NeRF scripts expose several important settings:
 
 | Parameter | Meaning | Common values |
 | --- | --- | --- |
-| `sample_every` | Training image sparsity. If `n`, use 1 image every `n` frames. | `1`, `2`, `4` |
+| `sample_every` | Training image sparsity. If `n`, use 1 image every `n` frames. | `1`, `2` |
 | `depth_loss_type` | Depth loss type. | `mse`, `l1`, `kl` |
 | `depth_sup_type` | Depth supervision source. | `gt`, `stereo_crop`, `mono_crop`, `mff_crop`, `rgbonly` |
 | `lambda_depth` | Weight of the depth loss. | method-dependent |
@@ -151,7 +151,6 @@ Processed KITTI roots:
 ```text
 /home/ubuntu/final_project/data/kitti/kitti_select_static_5seq
 /home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4
 ```
 
 Default sequence:
@@ -170,12 +169,6 @@ Sparse every-2 MipNeRF-360 checkpoints/logs:
 
 ```text
 /home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-1-7.5w-mse-debug
-```
-
-Sparse every-4 MipNeRF-360 checkpoints/logs:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-sparse-every4-7.5w-mse
 ```
 
 Exact sparse every-2 command/config:
@@ -197,10 +190,3 @@ python -m train \
   --logtostderr
 ```
 
-Exact sparse every-4 command/config:
-
-```bash
-cd /home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
-conda activate multinerf
-bash scripts/train_kitti_sparse.sh
-```

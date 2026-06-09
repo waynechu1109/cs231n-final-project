@@ -7,9 +7,9 @@ Wayne Chu · Yashasvini Gopalan · Changju Yuan
 
 ## Overview
 
-Sparse-view neural reconstruction in outdoor driving scenes is challenging because cameras move along a narrow forward-facing trajectory with limited multi-view overlap. Although monocular depth estimators can provide dense geometric priors, their predictions are noisy and not uniformly reliable across image regions.
+Reconstructing outdoor driving scenes from sparse views is difficult due to the narrow forward-facing trajectory of the camera motion and limited multi-view overlap. Although monocular depth estimators can provide dense geometric priors, their predictions are noisy and not consistently reliable over the image regions.
 
-This project investigates **photometric-masked monocular depth supervision** for sparse-view outdoor scene reconstruction. We use [Depth Anything V2 (DA-V2)](https://github.com/DepthAnything/Depth-Anything-V2) as a dense monocular depth prior, align its predictions to metric depth via scale-shift fitting, and apply depth supervision selectively using photometric masks generated from an RGB-only baseline model. We evaluate on two representative scene representations: **Mip-NeRF-360** and **Splatfacto (3DGS)**.
+This project focuses on **photometric-masked monocular depth supervision** for sparse-view outdoor scene reconstruction. We leverage [Depth Anything V2 (DA-V2)](https://github.com/DepthAnything/Depth-Anything-V2) as a dense monocular depth prior, calibrate its predictions to metric depth with scale-shift fitting, and make use of depth supervision selectively with photometric masks trained on an RGB-only baseline model. We evaluate on two representative scene representations: **Mip-NeRF-360** and **Splatfacto (3DGS)** .
 
 ### Key Results
 
@@ -36,7 +36,7 @@ For KITTI, reference depth comes from projected LiDAR points. For Mip-NeRF-360 B
 
 ### Photometric-Masked Depth Supervision
 
-Rather than applying depth loss uniformly, we restrict supervision to pixels where the RGB-only baseline is already reliable. A per-pixel photometric error map is computed from a pre-trained RGB-only model:
+Instead of applying the depth loss everywhere, we only supervise the pixels where the RGB-only baseline is already reliable. A pre-trained RGB-only model is used to compute a per-pixel photometric error map:
 
 $$e(u) = \frac{1}{3} \sum_{c \in \lbrace R,G,B \rbrace} \left| \hat{I}_c(u) - I_c(u) \right|$$
 
@@ -81,7 +81,6 @@ Five static sequences (00, 02, 05, 06) with 125–320 frames each. Calibrated od
 
 - **Dense** — all training frames
 - **Sparse every-2** — 50% subsampled (simulates 2.5 Hz capture)
-- **Sparse every-4** — 25% subsampled
 
 Default sequence used in most experiments:
 ```
@@ -248,16 +247,6 @@ Average scale-shift alignment error on KITTI LiDAR: **4.22 m**. DA-V2 is most re
 
 ---
 
-## Citation
-
-```bibtex
-@misc{chu2026reliability,
-  title   = {Reliability-Aware Monocular Depth Supervision for Sparse-View Neural Reconstruction},
-  author  = {Chu, Wayne and Gopalan, Yashasvini and Yuan, Changju},
-  year    = {2026},
-  note    = {CS231N Final Project, Stanford University}
-}
-```
 
 This project builds on:
 - [Digging into Depth Priors for Outdoor Neural Radiance Fields](https://github.com/barbararoessle/e2e_multi_view_stereo) (primary baseline)

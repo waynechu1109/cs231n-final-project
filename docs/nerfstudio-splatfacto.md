@@ -57,53 +57,6 @@ That message confirms that the custom split in `transforms.json` is being used.
 
 ### Prepared Sparse Nerfstudio Dataset
 
-For sparse `splatfacto` training, use the nerfstudio-formatted sparse dataset here:
-
-```text
-/home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every4
-```
-
-This dataset is derived from the dense nerfstudio `transforms.json`, but only keeps every 4th KITTI frame. Its `images` entry is a symlink to the sparse KITTI image folder:
-
-```text
-images -> /home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/images
-transforms.json
-SPARSE_EVERY4_MANIFEST.txt
-```
-
-The sparse nerfstudio dataset was created with:
-
-```bash
-cd /home/ubuntu/final_project
-python scripts/make_nerfstudio_kitti_sparse.py
-```
-
-The script does the following:
-
-- reads `data/nerfstudio/kitti_seq02_0034/transforms.json`,
-- keeps frames whose numeric filename is divisible by 4,
-- writes a new sparse `transforms.json`,
-- symlinks `images` to the already prepared sparse KITTI images,
-- writes `SPARSE_EVERY4_MANIFEST.txt` with the split summary.
-
-The resulting split is:
-
-```text
-44 total frames
-40 train frames
-4 validation frames
-4 test frames
-```
-
-The validation/test frames are aligned with the sparse MipNeRF split:
-
-```text
-00000036.png, 00000076.png, 00000116.png, 00000156.png
-```
-
-
-### Prepared Sparse Every-2 Nerfstudio Dataset
-
 The sparse every-2 dataset for `splatfacto` is here:
 
 ```text
@@ -156,7 +109,6 @@ Previous sparse `splatfacto` outputs are under:
 
 ```text
 /home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every2/splatfacto
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto
 ```
 
 ### Nerfstudio Environment
@@ -225,16 +177,6 @@ cd /home/ubuntu/final_project/nerfstudio
 
 ns-train splatfacto \
   --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2 \
-  --vis tensorboard
-```
-
-For sparse training, point `--data` to the sparse nerfstudio dataset:
-
-```bash
-cd /home/ubuntu/final_project/nerfstudio
-
-ns-train splatfacto \
-  --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every4 \
   --vis tensorboard
 ```
 
