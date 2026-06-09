@@ -244,7 +244,6 @@ Average scale-shift alignment error on KITTI LiDAR: **4.22 m**. DA-V2 is most re
 | Nerfstudio Splatfacto DA-V2 depth supervision | [docs/nerfstudio-splatfacto-da2.md](docs/nerfstudio-splatfacto-da2.md) |
 | Modal cloud training (splatfacto-da2 sweep) | [docs/modal-splatfacto.md](docs/modal-splatfacto.md) |
 | Depth Anything V2 preprocessing pipeline | [docs/depth-anything-v2.md](docs/depth-anything-v2.md) |
-| NeRF++ and Instant-NGP depth notes | [docs/other-methods.md](docs/other-methods.md) |
 | Troubleshooting and citation | [docs/troubleshooting.md](docs/troubleshooting.md) |
 
 ---
