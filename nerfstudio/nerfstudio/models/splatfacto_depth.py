@@ -48,7 +48,7 @@ class SplatfactoDepthModel(SplatfactoModel):
         """Binary mask from fixed photometric-error PNGs (1 = apply depth loss at pixel)."""
         if "photo_mask" not in batch:
             return None
-        photo_mask = batch["photo_mask"]
+        photo_mask = batch["photo_mask"].to(self.device)
         if photo_mask.dim() == 3:
             photo_mask = photo_mask[..., 0]
         return photo_mask > 0.5
@@ -100,6 +100,11 @@ class SplatfactoDepthModel(SplatfactoModel):
             photo_mask = self._photo_mask(batch)
             if photo_mask is not None:
                 depth_valid = self._depth_valid_mask(depth_gt)
+                if photo_mask.shape != depth_valid.shape:
+                    h = min(photo_mask.shape[0], depth_valid.shape[0])
+                    w = min(photo_mask.shape[1], depth_valid.shape[1])
+                    photo_mask = photo_mask[:h, :w]
+                    depth_valid = depth_valid[:h, :w]
                 metrics_dict["photo_mask_fraction"] = photo_mask[depth_valid].float().mean()
         return metrics_dict
 

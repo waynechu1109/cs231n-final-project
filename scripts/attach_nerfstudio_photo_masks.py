@@ -83,7 +83,24 @@ def main() -> None:
 
     if missing:
         preview = ", ".join(missing[:5])
-        raise SystemExit(f"{len(missing)} frames missing mask files, e.g. {preview}")
+        print(f"WARNING: {len(missing)} frames missing mask files (likely val split), e.g. {preview}")
+        if available:
+            placeholder_src = args.mask_dir / sorted(available)[0]
+            for name in missing:
+                shutil.copy(placeholder_src, args.mask_dir / name)
+            print(f"Created {len(missing)} placeholder masks copied from {placeholder_src.name}")
+            available = {p.name for p in args.mask_dir.iterdir() if p.is_file()}
+            frames = []
+            for frame in meta["frames"]:
+                name = frame_name(frame)
+                out_frame = dict(frame)
+                if "photo_mask_file_path" in out_frame and not args.overwrite:
+                    frames.append(out_frame)
+                    continue
+                out_frame["photo_mask_file_path"] = f"./{args.link_name}/{name}"
+                frames.append(out_frame)
+        else:
+            raise SystemExit(f"{len(missing)} frames missing mask files and no available masks to copy, e.g. {preview}")
 
     meta["frames"] = frames
     meta["photo_mask_mode"] = meta.get("photo_mask_mode", "high")

@@ -10,6 +10,8 @@ Generate fixed photometric masks from a trained splatfacto / splatfacto-da2 chec
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
 import sys
 from pathlib import Path
 
@@ -22,6 +24,46 @@ NERFSTUDIO_ROOT = PROJECT_ROOT / "nerfstudio"
 sys.path.insert(0, str(NERFSTUDIO_ROOT))
 
 from nerfstudio.utils.eval_utils import eval_setup  # noqa: E402
+
+
+@contextlib.contextmanager
+def _strip_photo_masks_ctx(data_dir: Path):
+    """Temporarily remove photo_mask_file_path entries from transforms.json.
+
+    Needed when a previous run left partial photo_mask entries that cause
+    nerfstudio's dataparser assertion (all-or-nothing requirement).
+    """
+    transforms_path = data_dir / "transforms.json"
+    if not transforms_path.exists():
+        yield
+        return
+
+    with transforms_path.open() as f:
+        original_text = f.read()
+    meta = json.loads(original_text)
+
+    has_masks = any("photo_mask_file_path" in frame for frame in meta.get("frames", []))
+    if not has_masks:
+        yield
+        return
+
+    modified = dict(meta)
+    modified["frames"] = [
+        {k: v for k, v in frame.items() if k != "photo_mask_file_path"}
+        for frame in meta["frames"]
+    ]
+    modified.pop("photo_mask_mode", None)
+    with transforms_path.open("w") as f:
+        json.dump(modified, f, indent=4)
+        f.write("\n")
+    print(f"[strip] Temporarily removed photo_mask entries from {transforms_path}")
+
+    try:
+        yield
+    finally:
+        with transforms_path.open("w") as f:
+            f.write(original_text)
+        print(f"[strip] Restored photo_mask entries in {transforms_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +98,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Checkpoint step (default: latest in config load_dir).",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Data directory whose transforms.json may have stale photo_mask entries to strip.",
+    )
     return parser.parse_args()
 
 
@@ -68,11 +116,13 @@ def main() -> None:
             config.load_step = args.load_step
         return config
 
-    _config, pipeline, _ckpt, step = eval_setup(
-        args.load_config,
-        test_mode="val",
-        update_config_callback=_set_load_step,
-    )
+    ctx = _strip_photo_masks_ctx(args.data_dir) if args.data_dir else contextlib.nullcontext()
+    with ctx:
+        _config, pipeline, _ckpt, step = eval_setup(
+            args.load_config,
+            test_mode="val",
+            update_config_callback=_set_load_step,
+        )
     device = pipeline.device
     train_dataset = pipeline.datamanager.train_dataset
     pipeline.eval()

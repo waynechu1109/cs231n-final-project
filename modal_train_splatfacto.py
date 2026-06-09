@@ -387,12 +387,17 @@ def generate_masks(
     thresh_tag = f"{threshold:.2f}".replace(".", "")  # 0.12 -> "012"
     mask_dir = f"{DATA_MOUNT}/masks/{base_exp_name}_{photo_mask_mode}{thresh_tag}"
 
+    # Derive data_dir from base_exp_name (strip _lambda... suffix)
+    data_dir_name = base_exp_name.split("_lambda")[0]
+    data_dir = f"{DATA_MOUNT}/nerfstudio/{data_dir_name}"
+
     cmd = [
         "python", "/opt/project_scripts/generate_splatfacto_photo_masks.py",
         "--load-config", config_path,
         "--output-dir", mask_dir,
         "--threshold", str(threshold),
         "--photo-mask-mode", photo_mask_mode,
+        "--data-dir", data_dir,
     ]
     if load_step >= 0:
         cmd += ["--load-step", str(load_step)]
