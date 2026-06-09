@@ -75,6 +75,16 @@ __external_build__/
 /Depth-Anything-V2/vis_video_depth/
 /Depth-Anything-V2/metric_depth/exp/
 
+# Upstream docs, CI, and test assets (not needed to run experiments)
+# Removing these from tracking shrinks the repo by ~78 MB
+/nerfstudio/docs/
+/nerfstudio/tests/
+/nerfstudio/colab/
+/nerfstudio/.github/
+/nerfstudio/.devcontainer/
+/outdoor-nerf-depth/docs/
+/outdoor-nerf-depth/nerf-methods/mipnerf360/tests/
+
 *.txt
 *.log
 
