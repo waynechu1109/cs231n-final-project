@@ -325,34 +325,35 @@ def main(unused_argv):
         if jax.host_id() != 0:
           continue
         
-        cap = 80
-        current_gt_sparse = batch.disps_gt / config.depth_scale
-        current_pred = rendering['depth'] / config.depth_scale
-        valid = (current_gt_sparse < cap)&(current_gt_sparse>1e-3)
-        valid_gt = current_gt_sparse[valid].clip(1e-3, cap)
-        valid_pred = current_pred[valid]
-        valid_pred = valid_pred.clip(1e-3,cap)
+        if batch.disps_gt is not None:
+          cap = 80
+          current_gt_sparse = batch.disps_gt / config.depth_scale
+          current_pred = rendering['depth'] / config.depth_scale
+          valid = (current_gt_sparse < cap) & (current_gt_sparse > 1e-3)
+          valid_gt = current_gt_sparse[valid].clip(1e-3, cap)
+          valid_pred = current_pred[valid]
+          valid_pred = valid_pred.clip(1e-3, cap)
 
-        thresh = np.maximum((valid_gt / valid_pred), (valid_pred / valid_gt))
-        rmse = (valid_gt - valid_pred) ** 2
-        rmse_tot += np.sqrt(np.mean(rmse))
-        rmse_log = (np.log(valid_gt) - np.log(valid_pred)) ** 2
-        rmse_log_tot += np.sqrt(np.mean(rmse_log))
-        abs_diff += np.mean(np.abs(valid_gt - valid_pred))
-        abs_rel += np.mean(np.abs(valid_gt - valid_pred) / valid_gt)
-        abs_rel_save = np.zeros_like(current_pred)
-        abs_rel_save[valid] = np.abs(valid_gt - valid_pred)
-  
-        utils.save_npy(abs_rel_save, path_fn(f'absrel_{idx:03d}.npy'))
-        utils.save_normalized(abs_rel_save, path_fn(f'absrel_vis_{idx:03d}.png'))
-        Image.fromarray((np.array(current_pred).clip(1e-3, 80) * 256.0).astype(np.uint16)).save(
-          path_fn(f'depth_{idx:03d}.png')
-        ) 
+          thresh = np.maximum((valid_gt / valid_pred), (valid_pred / valid_gt))
+          rmse = (valid_gt - valid_pred) ** 2
+          rmse_tot += np.sqrt(np.mean(rmse))
+          rmse_log = (np.log(valid_gt) - np.log(valid_pred)) ** 2
+          rmse_log_tot += np.sqrt(np.mean(rmse_log))
+          abs_diff += np.mean(np.abs(valid_gt - valid_pred))
+          abs_rel += np.mean(np.abs(valid_gt - valid_pred) / valid_gt)
+          abs_rel_save = np.zeros_like(current_pred)
+          abs_rel_save[valid] = np.abs(valid_gt - valid_pred)
 
-        sq_rel += np.mean(((valid_gt - valid_pred)**2) / valid_gt)
+          utils.save_npy(abs_rel_save, path_fn(f'absrel_{idx:03d}.npy'))
+          utils.save_normalized(abs_rel_save, path_fn(f'absrel_vis_{idx:03d}.png'))
+          Image.fromarray(
+              (np.array(current_pred).clip(1e-3, 80) * 256.0).astype(np.uint16)
+          ).save(path_fn(f'depth_{idx:03d}.png'))
 
-        rmses.append(np.sqrt(np.mean(rmse)))
-        abs_rels.append(np.mean(np.abs(valid_gt - valid_pred) / valid_gt))
+          sq_rel += np.mean(((valid_gt - valid_pred)**2) / valid_gt)
+
+          rmses.append(np.sqrt(np.mean(rmse)))
+          abs_rels.append(np.mean(np.abs(valid_gt - valid_pred) / valid_gt))
 
         gt_rgb = np.array(batch.rgb, dtype=np.float64)
         rendering['rgb'] = np.array(rendering['rgb'], dtype=np.float64)

@@ -17,7 +17,12 @@ def main():
     parser.add_argument("--input-size", type=int, default=518)
     args = parser.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"  # must match image2tensor() in dpt.py on Apple Silicon
+    else:
+        device = "cpu"
 
     model_configs = {
         "vits": {

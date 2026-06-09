@@ -25,7 +25,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NERFSTUDIO_DIR="${PROJECT_ROOT}/nerfstudio"
 
+DATASET_FAMILY="${DATASET_FAMILY:-kitti}"
 SPARSE_KITTI_ROOT="${SPARSE_KITTI_ROOT:-${PROJECT_ROOT}/data/kitti/kitti_select_static_5seq_sparse_every2}"
+MIP360_SPARSE_ROOT="${MIP360_SPARSE_ROOT:-${PROJECT_ROOT}/data/mip360_sparse}"
+MIP360_SCENE="${MIP360_SCENE:-bicycle}"
 KITTI_SEQ_DIR="${KITTI_SEQ_DIR:-${SPARSE_KITTI_ROOT}/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt}"
 
 derive_nerfstudio_slug() {
@@ -41,9 +44,18 @@ derive_nerfstudio_slug() {
   return 1
 }
 
-SEQ_SLUG="${SEQ_SLUG:-$(derive_nerfstudio_slug)}"
-NERFSTUDIO_SRC="${NERFSTUDIO_SRC:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}_sparse_every2}"
-DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}_sparse_every2_da2}"
+if [[ "${DATASET_FAMILY}" == mip360 ]]; then
+  SEQ_SLUG="${SEQ_SLUG:-${MIP360_SCENE}_sparse}"
+  NERFSTUDIO_SRC="${NERFSTUDIO_SRC:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}}"
+  DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}_da2}"
+  KITTI_SEQ_DIR="${KITTI_SEQ_DIR:-${MIP360_SPARSE_ROOT}/${MIP360_SCENE}}"
+  SPARSE_TAG=""
+else
+  SEQ_SLUG="${SEQ_SLUG:-$(derive_nerfstudio_slug)}"
+  NERFSTUDIO_SRC="${NERFSTUDIO_SRC:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}_sparse_every2}"
+  DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}_sparse_every2_da2}"
+  SPARSE_TAG="_sparse_every2"
+fi
 
 DEPTH_SUP_TYPE="${DEPTH_SUP_TYPE:-da2}"
 LAMBDA_DEPTH="${LAMBDA_DEPTH:-0.05}"
@@ -63,13 +75,13 @@ if [[ -n "${PHOTO_MASK_DIR}" ]]; then
 else
   MASK_LABEL="nomask"
 fi
-EXP_NAME="${EXP_NAME:-${SEQ_SLUG}_sparse_every2_${DEPTH_SUP_TYPE}_lambda${LAMBDA_DEPTH}_${MASK_LABEL}_${MAX_NUM_ITERATIONS}}"
+EXP_NAME="${EXP_NAME:-${SEQ_SLUG}${SPARSE_TAG}_${DEPTH_SUP_TYPE}_lambda${LAMBDA_DEPTH}_${MASK_LABEL}_${MAX_NUM_ITERATIONS}}"
 
-DENSE_NERFSTUDIO="${DENSE_NERFSTUDIO:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG}}"
-DEPTH_DIR="${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}"
+DENSE_NERFSTUDIO="${DENSE_NERFSTUDIO:-${PROJECT_ROOT}/data/nerfstudio/${SEQ_SLUG%%_sparse*}}"
+DEPTH_DIR="${DEPTH_DIR:-${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}}"
 
 if [[ ! -d "${KITTI_SEQ_DIR}" ]]; then
-  echo "Missing KITTI sequence directory: ${KITTI_SEQ_DIR}" >&2
+  echo "Missing sequence directory: ${KITTI_SEQ_DIR}" >&2
   exit 1
 fi
 

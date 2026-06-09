@@ -62,6 +62,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow writing into an existing destination directory.",
     )
+    parser.add_argument(
+        "--skip-missing-frames",
+        action="store_true",
+        help="Drop frames with no matching depth (by stem) instead of failing.",
+    )
+    parser.add_argument(
+        "--images-dir",
+        type=Path,
+        default=None,
+        help="RGB image folder (e.g. mip360_sparse/bicycle/images). Used when --src has only transforms.json.",
+    )
     return parser.parse_args()
 
 
@@ -107,7 +118,12 @@ def main() -> None:
     with transforms_path.open() as f:
         meta = json.load(f)
 
-    images_src = resolve_images_path(args.src, meta)
+    if args.images_dir is not None:
+        images_src = args.images_dir.resolve()
+        if not images_src.is_dir():
+            raise SystemExit(f"Missing --images-dir: {images_src}")
+    else:
+        images_src = resolve_images_path(args.src, meta)
     depth_link_name = f"depths_{args.depth_sup_type}"
     depth_dst = args.dst / depth_link_name
 
@@ -127,24 +143,34 @@ def main() -> None:
     elif not depth_dst.exists():
         os.symlink(args.depth_dir.resolve(), depth_dst)
 
-    available_depths = {p.name for p in args.depth_dir.iterdir() if p.is_file()}
+    # Depth PNG stems may differ from RGB extensions (e.g. _DSC8679.JPG -> _DSC8679.png).
+    depth_by_stem = {
+        p.stem: p.name for p in args.depth_dir.iterdir() if p.is_file()
+    }
     frames = []
     missing = []
     for frame in meta["frames"]:
         name = frame_name(frame)
+        depth_name = depth_by_stem.get(Path(name).stem)
         out_frame = dict(frame)
-        if name not in available_depths:
+        if depth_name is None:
             missing.append(name)
             continue
-        out_frame["depth_file_path"] = f"./{depth_link_name}/{name}"
+        out_frame["depth_file_path"] = f"./{depth_link_name}/{depth_name}"
         frames.append(out_frame)
 
     if missing:
         preview = ", ".join(missing[:5])
-        raise SystemExit(f"{len(missing)} frames are missing depth maps: {preview}")
+        if not args.skip_missing_frames:
+            raise SystemExit(f"{len(missing)} frames are missing depth maps: {preview}")
+        print(f"Warning: skipping {len(missing)} frames without depth: {preview}")
 
     out_meta = dict(meta)
     out_meta["frames"] = frames
+    kept_paths = {f["file_path"] for f in frames}
+    for key in ("train_filenames", "val_filenames", "test_filenames"):
+        if key in out_meta:
+            out_meta[key] = [p for p in out_meta[key] if p in kept_paths]
     out_meta["depth_sup_type"] = args.depth_sup_type
     out_meta["depth_unit_scale_factor"] = 1.0 / 256.0
     out_meta["depth_crop_range"] = args.depth_crop_range

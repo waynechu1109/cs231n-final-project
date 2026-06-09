@@ -182,6 +182,7 @@ The original long README has been split into focused guides:
 | Topic | File |
 | --- | --- |
 | MipNeRF-360 KITTI setup and training | [docs/mipnerf360-kitti.md](docs/mipnerf360-kitti.md) |
+| Mip-NeRF 360 bicycle sparse (λ / mask sweep) | [docs/mip360-bicycle-sparse.md](docs/mip360-bicycle-sparse.md) |
 | Nerfstudio Splatfacto dense/sparse training | [docs/nerfstudio-splatfacto.md](docs/nerfstudio-splatfacto.md) |
 | Nerfstudio Splatfacto DA2 depth supervision | [docs/nerfstudio-splatfacto-da2.md](docs/nerfstudio-splatfacto-da2.md) |
 | **Modal cloud training (splatfacto-da2 sweep)** | [docs/modal-splatfacto.md](docs/modal-splatfacto.md) |

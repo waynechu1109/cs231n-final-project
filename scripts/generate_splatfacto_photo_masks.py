@@ -17,12 +17,16 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NERFSTUDIO_ROOT = PROJECT_ROOT / "nerfstudio"
 sys.path.insert(0, str(NERFSTUDIO_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+from attach_nerfstudio_photo_masks import strip_photo_masks_from_dataset  # noqa: E402
+from nerfstudio.engine.trainer import TrainerConfig  # noqa: E402
 from nerfstudio.utils.eval_utils import eval_setup  # noqa: E402
 
 
@@ -110,6 +114,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    config = yaml.load(args.load_config.read_text(), Loader=yaml.Loader)
+    if not isinstance(config, TrainerConfig):
+        raise SystemExit(f"Expected TrainerConfig in {args.load_config}")
+    data_dir = Path(config.pipeline.datamanager.data)
+    if strip_photo_masks_from_dataset(data_dir):
+        print(f"Cleared stale photo mask paths from {data_dir}/transforms.json")
 
     def _set_load_step(config):
         if args.load_step is not None:

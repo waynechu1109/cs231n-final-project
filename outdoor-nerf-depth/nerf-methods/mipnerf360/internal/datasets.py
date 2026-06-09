@@ -259,7 +259,8 @@ class Dataset(threading.Thread, metaclass=abc.ABCMeta):
                        f'per-process batch size {self._batch_size}')
     self._batching = utils.BatchingMethod(config.batching)
     self._use_tiffs = config.use_tiffs
-    self._load_disps = True
+    self._load_disps = bool(
+        config.compute_disp_metrics or config.lambda_depth > 0)
     self._load_normals = config.compute_normal_metrics
     self._test_camera_idx = 0
     self._num_border_pixels_to_mask = config.num_border_pixels_to_mask
@@ -443,8 +444,9 @@ class Dataset(threading.Thread, metaclass=abc.ABCMeta):
     if not self.render_path:
       batch['rgb'] = self.images[cam_idx, pix_y_int, pix_x_int]
     if self._load_disps:
-      batch['disps_gt'] = self.disp_images[cam_idx, pix_y_int, pix_x_int]
       batch['disps_sup'] = self.disp_images_sup[cam_idx, pix_y_int, pix_x_int]
+      if self.disp_images is not None:
+        batch['disps_gt'] = self.disp_images[cam_idx, pix_y_int, pix_x_int]
     if self._load_normals:
       batch['normals'] = self.normal_images[cam_idx, pix_y_int, pix_x_int]
       batch['alphas'] = self.alphas[cam_idx, pix_y_int, pix_x_int]
@@ -627,30 +629,40 @@ class LLFF(Dataset):
       # so we need to map between the two sorted lists of files.
       colmap_files = sorted(utils.listdir(colmap_image_dir))
       image_files = sorted(utils.listdir(image_dir))
-      depth_files = sorted(utils.listdir(depth_dir))
-      depth_sup_files = sorted(utils.listdir(depth_sup_dir))
       colmap_to_image = dict(zip(colmap_files, image_files))
-      colmap_to_depth = dict(zip(colmap_files, depth_files))
-      colmap_to_depth_sup = dict(zip(colmap_files, depth_sup_files))
+      load_gt_depth = utils.file_exists(depth_dir)
+      if self._load_disps:
+        if not utils.file_exists(depth_sup_dir):
+          raise ValueError(
+              f'Depth supervision folder {depth_sup_dir} does not exist.')
+        depth_sup_files = sorted(utils.listdir(depth_sup_dir))
+        colmap_to_depth_sup = dict(zip(colmap_files, depth_sup_files))
+        if load_gt_depth:
+          depth_files = sorted(utils.listdir(depth_dir))
+          colmap_to_depth = dict(zip(colmap_files, depth_files))
+        else:
+          colmap_to_depth = None
 
       image_paths = [os.path.join(image_dir, colmap_to_image[f])
                      for f in image_names]
       images = [utils.load_img(x) for x in image_paths]
       images = np.stack(images, axis=0) / 255.
+      depths = None
       if self._load_disps:
-        depth_paths = [os.path.join(depth_dir, colmap_to_depth[f])
-                      for f in image_names]
-        depths = [utils.load_img(x) for x in depth_paths]
-        depths = np.stack(depths, axis=0)
-        depths[depths < 2] = -256. # NOTE:　Negative depths mean invalid data.
-        depths  /= 256. # NOTE: KITTI use 256 as a multipying factor
+        if load_gt_depth:
+          depth_paths = [os.path.join(depth_dir, colmap_to_depth[f])
+                        for f in image_names]
+          depths = [utils.load_img(x) for x in depth_paths]
+          depths = np.stack(depths, axis=0)
+          depths[depths < 2] = -256.  # Negative depths mean invalid data.
+          depths /= 256.  # KITTI uses 256 as a multiplying factor
 
         depth_sup_paths = [os.path.join(depth_sup_dir, colmap_to_depth_sup[f])
                       for f in image_names]
         depths_sup = [utils.load_img(x) for x in depth_sup_paths]
         depths_sup = np.stack(depths_sup, axis=0)
-        depths_sup[depths_sup < 2] = -256. # NOTE:　Negative depths mean invalid data.
-        depths_sup  /= 256. # NOTE: KITTI use 256 as a multipying factor
+        depths_sup[depths_sup < 2] = -256.  # Negative depths mean invalid data.
+        depths_sup /= 256.  # KITTI uses 256 as a multiplying factor
         if config.depth_crop_range > 0:
           depths_sup[depths_sup > config.depth_crop_range] = -256. # NOTE: set large values to invalid
         if config.depth_keep_ratio > 0:
@@ -765,8 +777,9 @@ class LLFF(Dataset):
     poses = poses[indices]
     if self._load_disps:
       config.depth_scale = scale
-      depths = scale * depths
-      depths = depths[indices]
+      if depths is not None:
+        depths = scale * depths
+        depths = depths[indices]
 
       depths_sup = scale * depths_sup
       depths_sup = depths_sup[indices]
@@ -808,8 +821,8 @@ class LLFF(Dataset):
     self.images = images
     self.image_names = split_image_names
     if self._load_disps:
-      self.disp_images = np.stack(depths, axis=0)
-      self.disp_images_sup = np.stack(depths_sup, axis=0)
+      self.disp_images = depths
+      self.disp_images_sup = depths_sup
 
     self.camtoworlds = self.render_poses if config.render_path else poses
     self.height, self.width = images.shape[1:3]

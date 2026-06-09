@@ -58,6 +58,10 @@ out_vol = modal.Volume.from_name("nerf-outputs", create_if_missing=True)
 DATA_MOUNT = "/vol/data"
 OUT_MOUNT = "/vol/outputs"
 
+# Mip-NeRF 360 originals are ~5k px; splatfacto-da2 uses full-image eval + SSIM on GPU.
+# Factor 4 matches the Kaggle pack's images_4/ and keeps A10G (~24GB) under budget.
+MIP360_DOWNSCALE_FACTOR = 4
+
 # ---------------------------------------------------------------------------
 # Image
 # ---------------------------------------------------------------------------
@@ -141,6 +145,104 @@ def _derive_slug(kitti_seq_dir: str) -> str:
     return f"kitti_seq{int(m.group(1)):02d}_{m.group(2)}"
 
 
+def _resolve_dataset_paths(
+    dataset_family: str,
+    kitti_seq_dir: str,
+    mip360_scene: str,
+    depth_sup_type: str,
+) -> tuple[str, str, str, str, str]:
+    """Return (seq_dir, slug, nerfstudio_src, data_dir, sparse_tag)."""
+    if dataset_family == "mip360":
+        scene = mip360_scene
+        seq_dir = (
+            kitti_seq_dir
+            if "/" in kitti_seq_dir
+            else f"{DATA_MOUNT}/mip360_sparse/{scene}"
+        )
+        slug = f"{scene}_sparse"
+        nerfstudio_src = f"{DATA_MOUNT}/nerfstudio/{slug}"
+        data_dir = f"{DATA_MOUNT}/nerfstudio/{slug}_{depth_sup_type}"
+        sparse_tag = ""
+    elif dataset_family == "kitti":
+        sparse_kitti_root = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq_sparse_every2"
+        seq_dir = (
+            kitti_seq_dir
+            if "/" in kitti_seq_dir
+            else f"{sparse_kitti_root}/{kitti_seq_dir}"
+        )
+        slug = _derive_slug(seq_dir)
+        nerfstudio_src = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2"
+        data_dir = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2_{depth_sup_type}"
+        sparse_tag = "_sparse_every2"
+    else:
+        raise ValueError(f"Unknown dataset_family: {dataset_family}")
+    return seq_dir, slug, nerfstudio_src, data_dir, sparse_tag
+
+
+def _experiment_name(
+    slug: str,
+    sparse_tag: str,
+    depth_sup_type: str,
+    lambda_depth: float,
+    max_num_iterations: int,
+    *,
+    photo_mask_dir: str = "",
+    photo_mask_mode: str = "low",
+    photo_mask_threshold: float = 0.12,
+    masked: bool = False,
+) -> str:
+    if photo_mask_dir or masked:
+        thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
+        mask_label = f"{photo_mask_mode}{thresh_tag}"
+    else:
+        mask_label = "nomask"
+    return (
+        f"{slug}{sparse_tag}_{depth_sup_type}_lambda{lambda_depth}_"
+        f"{mask_label}_{max_num_iterations}"
+    )
+
+
+def _wire_mip360_downscale_links(
+    data_dir: str,
+    seq_dir: str,
+    depth_sup_type: str,
+    *,
+    commit_volume: bool = False,
+) -> None:
+    """Nerfstudio maps RGB/depth/masks to {images,depths,photo_masks}_{factor}/ when downscaling."""
+    import os
+
+    images_n = f"{seq_dir}/images_{MIP360_DOWNSCALE_FACTOR}"
+    images_n_link = f"{data_dir}/images_{MIP360_DOWNSCALE_FACTOR}"
+    if not os.path.isdir(images_n):
+        raise FileNotFoundError(
+            f"Missing Mip-360 downscaled RGB folder: {images_n}\n"
+            "Upload mip360_sparse/<scene>/images_4 from the 360_v2 pack."
+        )
+    if not os.path.exists(images_n_link):
+        os.symlink(images_n, images_n_link)
+
+    depths_sup_link = f"{data_dir}/depths_{depth_sup_type}"
+    depths_n_link = f"{data_dir}/depths_{MIP360_DOWNSCALE_FACTOR}"
+    if not (os.path.isdir(depths_sup_link) or os.path.islink(depths_sup_link)):
+        raise FileNotFoundError(
+            f"Missing depth symlink in dataset: {depths_sup_link}\n"
+            f"Rebuild depth dataset under {data_dir} (delete stale _da2 and re-run train)."
+        )
+    if not os.path.exists(depths_n_link):
+        os.symlink(f"depths_{depth_sup_type}", depths_n_link)
+
+    photo_masks_link = f"{data_dir}/photo_masks"
+    photo_masks_n_link = f"{data_dir}/photo_masks_{MIP360_DOWNSCALE_FACTOR}"
+    if (os.path.isdir(photo_masks_link) or os.path.islink(photo_masks_link)) and not os.path.exists(
+        photo_masks_n_link
+    ):
+        os.symlink("photo_masks", photo_masks_n_link)
+
+    if commit_volume:
+        data_vol.commit()
+
+
 @app.function(
     image=image,
     gpu="A10G",
@@ -161,33 +263,24 @@ def train(
     photo_mask_dir: str = "",
     photo_mask_mode: str = "low",
     photo_mask_threshold: float = 0.12,
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     import os
+    import shutil
     import subprocess
 
-    # ---- resolve paths -------------------------------------------------
-    sparse_kitti_root = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq_sparse_every2"
-    seq_dir = (
-        kitti_seq_dir
-        if ("/" in kitti_seq_dir)
-        else f"{sparse_kitti_root}/{kitti_seq_dir}"
+    seq_dir, slug, nerfstudio_src, data_dir, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
     )
-
-    slug = _derive_slug(seq_dir)
-    nerfstudio_src = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2"
-    data_dir = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2_{depth_sup_type}"
     depth_dir = f"{seq_dir}/depths_{depth_sup_type}"
 
-    # Naming mirrors MipNeRF sweep convention:
-    #   {ds_tag}_sparse_every2_{sup_type}_lambda{lambda}_{mode}{thresh_tag}_{iters}
-    # e.g. kitti_seq02_0034_sparse_every2_da2_lambda0.05_low012_50000
-    #      kitti_seq02_0034_sparse_every2_da2_lambda0.05_nomask_50000
-    if photo_mask_dir:
-        thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
-        mask_label = f"{photo_mask_mode}{thresh_tag}"
-    else:
-        mask_label = "nomask"
-    exp_name = f"{slug}_sparse_every2_{depth_sup_type}_lambda{lambda_depth}_{mask_label}_{max_num_iterations}"
+    exp_name = _experiment_name(
+        slug, sparse_tag, depth_sup_type, lambda_depth, max_num_iterations,
+        photo_mask_dir=photo_mask_dir,
+        photo_mask_mode=photo_mask_mode,
+        photo_mask_threshold=photo_mask_threshold,
+    )
 
     # ---- sanity checks -------------------------------------------------
     for path, label in [
@@ -206,21 +299,45 @@ def train(
 
     # ---- step 1: build _da2 dataset if not yet done --------------------
     if not os.path.exists(f"{data_dir}/transforms.json"):
-        print(f"Building depth dataset: {data_dir}")
+        print(f"Building depth dataset: {data_dir} ({dataset_family})")
+        make_cmd = [
+            "python", "/opt/project_scripts/make_nerfstudio_kitti_depth.py",
+            "--src", nerfstudio_src,
+            "--dst", data_dir,
+            "--depth-dir", depth_dir,
+            "--depth-sup-type", depth_sup_type,
+            "--overwrite",
+        ]
+        # Mip-360: transforms.json only on volume; RGB + depth live under mip360_sparse/.
+        if dataset_family == "mip360":
+            make_cmd += [
+                "--images-dir", f"{seq_dir}/images",
+                "--skip-missing-frames",
+            ]
+        subprocess.run(make_cmd, check=True)
+        data_vol.commit()
+
+    # Strip stale mask metadata only after _da2 exists.
+    da2_shared = f"{DATA_MOUNT}/nerfstudio/{slug}{sparse_tag}_{depth_sup_type}"
+    if os.path.exists(f"{da2_shared}/transforms.json"):
         subprocess.run(
             [
-                "python", "/opt/project_scripts/make_nerfstudio_kitti_depth.py",
-                "--src", nerfstudio_src,
-                "--dst", data_dir,
-                "--depth-dir", depth_dir,
-                "--depth-sup-type", depth_sup_type,
-                "--overwrite",
+                "python", "/opt/project_scripts/attach_nerfstudio_photo_masks.py",
+                "--data-dir", da2_shared,
+                "--strip-only",
             ],
             check=True,
         )
+        data_vol.commit()
 
     # ---- step 2: attach photometric masks (optional) -------------------
     if photo_mask_dir:
+        # Parallel masked runs must not share one transforms.json / photo_masks link.
+        masked_data_dir = f"{data_dir}__{exp_name}"
+        if not os.path.exists(masked_data_dir):
+            print(f"Copying dataset for masked training: {masked_data_dir}")
+            shutil.copytree(data_dir, masked_data_dir, symlinks=True)
+        data_dir = masked_data_dir
         print(f"Attaching photometric masks from: {photo_mask_dir}")
         subprocess.run(
             [
@@ -230,6 +347,12 @@ def train(
                 "--overwrite",
             ],
             check=True,
+        )
+        data_vol.commit()
+
+    if dataset_family == "mip360":
+        _wire_mip360_downscale_links(
+            data_dir, seq_dir, depth_sup_type, commit_volume=True
         )
 
     # ---- step 3: train -------------------------------------------------
@@ -244,6 +367,13 @@ def train(
         "--pipeline.model.photo-mask-mode", photo_mask_mode,
         "--vis", "tensorboard",
     ]
+    # Dataparser flags use the nerfstudio-data subcommand (not --pipeline.datamanager...).
+    if dataset_family == "mip360":
+        cmd += [
+            "nerfstudio-data",
+            "--downscale-factor",
+            str(MIP360_DOWNSCALE_FACTOR),
+        ]
 
     print("=" * 60)
     print(f"Seq dir:     {seq_dir}")
@@ -274,6 +404,8 @@ def main(
     max_num_iterations: int = 50000,
     photo_mask_dir: str = "",
     photo_mask_mode: str = "low",
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     train.remote(
         kitti_seq_dir=kitti_seq_dir,
@@ -283,6 +415,8 @@ def main(
         max_num_iterations=max_num_iterations,
         photo_mask_dir=photo_mask_dir,
         photo_mask_mode=photo_mask_mode,
+        dataset_family=dataset_family,
+        mip360_scene=mip360_scene,
     )
 
 
@@ -310,6 +444,8 @@ def sweep(
     max_num_iterations: int = 50000,
     photo_mask_dir: str = "",
     photo_mask_mode: str = "low",
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     lambda_list = [float(v) for v in lambdas.split()]
     loss_list = loss_types.split()
@@ -323,6 +459,8 @@ def sweep(
             max_num_iterations=max_num_iterations,
             photo_mask_dir=photo_mask_dir,
             photo_mask_mode=photo_mask_mode,
+            dataset_family=dataset_family,
+            mip360_scene=mip360_scene,
         )
         for seq in seq_list
         for lam in lambda_list
@@ -339,9 +477,18 @@ def sweep(
     # Order matches train(): kitti_seq_dir, lambda_depth, depth_loss_type, depth_sup_type,
     #                        max_num_iterations, photo_mask_dir, photo_mask_mode, photo_mask_threshold
     for result in train.starmap([
-        (c['kitti_seq_dir'], c['lambda_depth'], c['depth_loss_type'],
-         "da2", c['max_num_iterations'], c['photo_mask_dir'],
-         c['photo_mask_mode'], 0.12)
+        (
+            c["kitti_seq_dir"],
+            c["lambda_depth"],
+            c["depth_loss_type"],
+            "da2",
+            c["max_num_iterations"],
+            c["photo_mask_dir"],
+            c["photo_mask_mode"],
+            0.12,
+            c["dataset_family"],
+            c["mip360_scene"],
+        )
         for c in configs
     ]):
         pass
@@ -426,11 +573,12 @@ def sweep_threshold(
     base_exp_name: str,
     thresholds: str = "0.08 0.12 0.16 0.22",
     photo_mask_mode: str = "low",
-    # training params carried over into the masked retrains
     kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
     lambda_depth: float = 0.05,
     depth_loss_type: str = "mse",
     max_num_iterations: int = 50000,
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     threshold_list = [float(t) for t in thresholds.split()]
 
@@ -457,19 +605,21 @@ def sweep_threshold(
 
     # ---- Stage 2: retrain with each mask set in parallel -----------------
     print(f"\n[Stage 2] Launching {len(mask_dirs)} masked retrains in parallel...")
-    train_configs = [
-        dict(
-            kitti_seq_dir=kitti_seq_dir,
-            lambda_depth=lambda_depth,
-            depth_loss_type=depth_loss_type,
-            max_num_iterations=max_num_iterations,
-            photo_mask_dir=mask_dir,
-            photo_mask_mode=photo_mask_mode,
-            photo_mask_threshold=threshold,
+    for _ in train.starmap([
+        (
+            kitti_seq_dir,
+            lambda_depth,
+            depth_loss_type,
+            "da2",
+            max_num_iterations,
+            mask_dir,
+            photo_mask_mode,
+            threshold,
+            dataset_family,
+            mip360_scene,
         )
         for mask_dir, threshold in zip(mask_dirs, threshold_list)
-    ]
-    for _ in train.starmap(train_configs):
+    ]):
         pass
 
     print("\n[Stage 2] All threshold sweep runs complete.")
@@ -495,10 +645,14 @@ def sweep_lambda_threshold(
     depth_loss_type: str = "mse",
     depth_sup_type: str = "da2",
     max_num_iterations: int = 50000,
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     lambda_list = [float(v) for v in lambdas.split()]
     threshold_list = [float(t) for t in thresholds.split()]
-    slug = _derive_slug(kitti_seq_dir)
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
+    )
 
     # All (lambda, threshold) combinations
     combos = [(lam, t) for lam in lambda_list for t in threshold_list]
@@ -511,7 +665,7 @@ def sweep_lambda_threshold(
     # Each lambda has its own nomask base checkpoint.
     print(f"\n[Stage 1] Generating {len(combos)} mask sets in parallel...")
     base_exp_names = [
-        f"{slug}_sparse_every2_{depth_sup_type}_lambda{lam}_nomask_{max_num_iterations}"
+        f"{slug}{sparse_tag}_{depth_sup_type}_lambda{lam}_nomask_{max_num_iterations}"
         for lam, _ in combos
     ]
     for i, (name, (lam, t)) in enumerate(zip(base_exp_names, combos)):
@@ -529,8 +683,18 @@ def sweep_lambda_threshold(
     # ---- Stage 2: retrain all combinations in parallel ----------------------
     print(f"\n[Stage 2] Launching {len(combos)} masked retrains in parallel...")
     for result in train.starmap([
-        (kitti_seq_dir, lam, depth_loss_type, depth_sup_type,
-         max_num_iterations, mask_dir, photo_mask_mode, t)
+        (
+            kitti_seq_dir,
+            lam,
+            depth_loss_type,
+            depth_sup_type,
+            max_num_iterations,
+            mask_dir,
+            photo_mask_mode,
+            t,
+            dataset_family,
+            mip360_scene,
+        )
         for (lam, t), mask_dir in zip(combos, mask_dirs)
     ]):
         pass
@@ -588,19 +752,78 @@ def run_eval(
     photo_mask_dir: str = "",
     photo_mask_mode: str = "low",
     photo_mask_threshold: float = 0.12,
+    masked: bool = False,
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
 ):
     import json
 
-    slug = _derive_slug(kitti_seq_dir)
-    if photo_mask_dir:
-        thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
-        mask_label = f"{photo_mask_mode}{thresh_tag}"
-    else:
-        mask_label = "nomask"
-    exp_name = f"{slug}_sparse_every2_{depth_sup_type}_lambda{lambda_depth}_{mask_label}_{max_num_iterations}"
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
+    )
+    exp_name = _experiment_name(
+        slug, sparse_tag, depth_sup_type, lambda_depth, max_num_iterations,
+        photo_mask_dir=photo_mask_dir,
+        photo_mask_mode=photo_mask_mode,
+        photo_mask_threshold=photo_mask_threshold,
+        masked=masked,
+    )
 
     print(f"Evaluating: {exp_name}")
     metrics = eval_run.remote(exp_name=exp_name)
     print("\n========== Eval Results ==========")
     print(json.dumps(metrics, indent=2))
     print("==")
+
+
+# ---------------------------------------------------------------------------
+# sweep_eval — eval all lambda values in parallel
+#
+# Usage (bicycle masked @ 0.14):
+#   modal run modal_train_splatfacto.py::sweep_eval \
+#     --dataset-family mip360 --mip360-scene bicycle \
+#     --lambdas "0.0 0.05 0.1 0.15" \
+#     --photo-mask-mode low --photo-mask-threshold 0.14 --masked
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def sweep_eval(
+    lambdas: str = "0.0 0.05 0.1 0.15",
+    depth_sup_type: str = "da2",
+    max_num_iterations: int = 50000,
+    photo_mask_mode: str = "low",
+    photo_mask_threshold: float = 0.14,
+    masked: bool = True,
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
+):
+    import json
+
+    lambda_list = [float(v) for v in lambdas.split()]
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
+    )
+    exp_names = [
+        _experiment_name(
+            slug, sparse_tag, depth_sup_type, lam, max_num_iterations,
+            photo_mask_mode=photo_mask_mode,
+            photo_mask_threshold=photo_mask_threshold,
+            masked=masked,
+        )
+        for lam in lambda_list
+    ]
+
+    print(f"\nEvaluating {len(exp_names)} experiments in parallel:")
+    for name in exp_names:
+        print(f"  {name}")
+
+    results = list(eval_run.map(exp_names))
+
+    print("\n========== Eval Summary ==========")
+    summary = {}
+    for lam, name, metrics in zip(lambda_list, exp_names, results):
+        summary[f"lambda{lam}"] = {"exp_name": name, **metrics}
+        print(f"\n--- lambda={lam}  ({name}) ---")
+        print(json.dumps(metrics, indent=2))
+    print("\n========== Combined ==========")
+    print(json.dumps(summary, indent=2))
