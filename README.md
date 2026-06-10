@@ -31,150 +31,6 @@ The default local training script uses this KITTI sequence:
 data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
 ```
 
-
-## Wayne Handoff Paths
-
-Use this section when sharing the current workspace state with Wayne.
-
-### Current Repo
-
-```text
-/home/ubuntu/final_project
-```
-
-Main code roots:
-
-```text
-/home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
-/home/ubuntu/final_project/nerfstudio
-/home/ubuntu/final_project/Depth-Anything-V2
-```
-
-### Processed KITTI Data
-
-Dense 5-sequence KITTI data:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq
-```
-
-Sparse KITTI data prepared from the dense data:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4
-```
-
-Default sequence used in most runs:
-
-```text
-KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
-```
-
-Nerfstudio-formatted KITTI data for `splatfacto`:
-
-```text
-/home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034
-/home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2
-/home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every4
-```
-
-### Generated Depth Maps
-
-For the default KITTI sequence, generated and prepared depth maps live under:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_da2
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_da2_npy
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_mff_crop
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_mono_crop
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_ste_conf_-1_crop
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_gt
-```
-
-Sparse every-2 and every-4 copies also include matching depth folders under their default sequence directories.
-
-### Previous Outputs, Checkpoints, And Logs
-
-MipNeRF-360 dense/default-sequence runs:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-1-7.5w-mse-debug
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-da2-vits-debug-1000
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-da2-vits-lambda005-25k
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-sparseview-da2-vits-lambda005-50k
-```
-
-MipNeRF-360 sparse runs:
-
-```text
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-1-7.5w-mse-debug
-/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every4/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/logs/checkpoints-sparse-every4-7.5w-mse
-```
-
-Nerfstudio `splatfacto` outputs:
-
-```text
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034/splatfacto
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every2/splatfacto
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto
-```
-
-Observed run directories include:
-
-```text
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034/splatfacto/2026-05-18_041846
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034/splatfacto/2026-05-21_180416
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every2/splatfacto/2026-05-22_165305
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every2/splatfacto/2026-05-22_165432
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto/2026-05-20_164544
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto/2026-05-20_164659
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto/2026-05-20_175757
-/home/ubuntu/final_project/nerfstudio/outputs/kitti_seq02_0034_sparse_every4/splatfacto/2026-05-20_182311
-```
-
-### Exact Sparse Training Commands
-
-MipNeRF-360 sparse every-2 command/config currently used:
-
-```bash
-cd /home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
-conda activate multinerf
-
-export DATA_DIR=/home/ubuntu/final_project/data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
-
-python -m train \
-  --gin_configs=configs/360.gin \
-  --gin_bindings="Config.max_steps = 50000" \
-  --gin_bindings="Config.sample_every = 1" \
-  --gin_bindings="Config.data_dir = '${DATA_DIR}'" \
-  --gin_bindings="Config.compute_disp_metrics = True" \
-  --gin_bindings="Config.depth_loss_type = 'mse'" \
-  --gin_bindings="Config.checkpoint_dir = '${DATA_DIR}/logs/checkpoints-1-7.5w-mse-debug'" \
-  --logtostderr
-```
-
-MipNeRF-360 sparse every-4 command/config used by `scripts/train_kitti_sparse.sh`:
-
-```bash
-cd /home/ubuntu/final_project/outdoor-nerf-depth/nerf-methods/mipnerf360
-conda activate multinerf
-bash scripts/train_kitti_sparse.sh
-```
-
-That script sets `Config.max_steps = 75000`, `Config.sample_every = 1`, `Config.depth_loss_type = 'mse'`, `Config.compute_disp_metrics = True`, `Config.data_dir` to the sparse every-4 KITTI sequence, and `Config.checkpoint_dir` to `${DATA_DIR}/logs/checkpoints-sparse-every4-7.5w-mse`.
-
-Nerfstudio `splatfacto` sparse every-2 command:
-
-```bash
-cd /home/ubuntu/final_project/nerfstudio
-conda activate nerfstudio
-
-ns-train splatfacto \
-  --data /home/ubuntu/final_project/data/nerfstudio/kitti_seq02_0034_sparse_every2 \
-  --vis tensorboard
-```
-
 ## Documentation
 
 The original long README has been split into focused guides:
@@ -222,3 +78,115 @@ cd /home/ubuntu/final_project/Depth-Anything-V2
 conda activate da2
 python run_da2_save_npy.py --help
 ```
+
+## Fixed Photometric Mask Depth Supervision
+
+A two-stage pipeline is provided for applying photometric-error-based masks to DA2 depth supervision.
+
+1. Train an RGB-only baseline with `sample_every=2` and `lambda_depth=0.0`.
+2. Render the training views from the RGB-only checkpoint and compute raw per-pixel photometric error.
+3. Generate fixed binary masks using a selected photometric error threshold.
+4. Train MipNeRF-360 with DA2 depth supervision while keeping supervision only on pixels selected by the fixed mask.
+
+The mask is generated from the RGB-only baseline and remains fixed during depth-supervised training. This avoids coupling mask generation with the model currently being optimized.
+
+### Generate Fixed Masks
+
+The following example generates a low-error mask with threshold `0.18`.
+
+```bash
+cd /home/ubuntu/cs231n_project/code/cs231n-final-project/outdoor-nerf-depth/nerf-methods/mipnerf360
+conda activate multinerf
+
+export REPO=/home/ubuntu/cs231n_project/code/cs231n-final-project
+export DATA_DIR=$REPO/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
+export RGB_CKPT=$DATA_DIR/logs/checkpoints-sparseview-rgbonly-sampleevery2-50k
+export MASK_DIR=$DATA_DIR/photo_masks_rgbonly_low018_sampleevery2
+
+python -m generate_fixed_photo_masks \
+  --gin_configs=configs/360.gin \
+  --gin_bindings="Config.data_dir='${DATA_DIR}'" \
+  --gin_bindings="Config.checkpoint_dir='${RGB_CKPT}'" \
+  --gin_bindings="Config.max_steps=50000" \
+  --gin_bindings="Config.batch_size=4096" \
+  --gin_bindings="Config.compute_disp_metrics=False" \
+  --gin_bindings="Config.lambda_depth=0.0" \
+  --gin_bindings="Config.sample_every=2" \
+  --gin_bindings="Config.fixed_photo_mask_dir='${MASK_DIR}'" \
+  --gin_bindings="Config.photo_mask_threshold=0.18" \
+  --gin_bindings="Config.photo_mask_mode='low'" \
+  --gin_bindings="Config.auto_adjust_near_far=True" \
+  --gin_bindings="Config.near=0.2" \
+  --gin_bindings="Config.far=1000000.0" \
+  --gin_bindings="Model.opaque_background=True" \
+  --gin_bindings="Model.raydist_fn=@jnp.reciprocal" \
+  --gin_bindings="NerfMLP.disable_density_normals=True" \
+  --gin_bindings="NerfMLP.net_depth=8" \
+  --gin_bindings="NerfMLP.net_width=1024" \
+  --gin_bindings="NerfMLP.warp_fn=@coord.contract" \
+  --gin_bindings="PropMLP.disable_density_normals=True" \
+  --gin_bindings="PropMLP.disable_rgb=True" \
+  --gin_bindings="PropMLP.net_depth=4" \
+  --gin_bindings="PropMLP.net_width=256" \
+  --gin_bindings="PropMLP.warp_fn=@coord.contract" \
+  --logtostderr
+```
+
+The generated mask directory should contain 79 PNG masks for the `sample_every=2` training split.
+
+### Train with Fixed Masks
+
+```bash
+cd /home/ubuntu/cs231n_project/code/cs231n-final-project/outdoor-nerf-depth/nerf-methods/mipnerf360
+conda activate multinerf
+
+export REPO=/home/ubuntu/cs231n_project/code/cs231n-final-project
+export DATA_DIR=$REPO/data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt
+export MASK_DIR=$DATA_DIR/photo_masks_rgbonly_low018_sampleevery2
+export CKPT_DIR=$DATA_DIR/logs/checkpoints-sparseview-da2-vits-lambda005-sampleevery2-fixedmask-low018-50k
+
+python -m train \
+  --gin_configs=configs/360.gin \
+  --gin_bindings="Config.data_dir='${DATA_DIR}'" \
+  --gin_bindings="Config.checkpoint_dir='${CKPT_DIR}'" \
+  --gin_bindings="Config.max_steps=50000" \
+  --gin_bindings="Config.checkpoint_every=25000" \
+  --gin_bindings="Config.batch_size=4096" \
+  --gin_bindings="Config.compute_disp_metrics=True" \
+  --gin_bindings="Config.depth_sup_type='da2'" \
+  --gin_bindings="Config.depth_keep_ratio=0.0" \
+  --gin_bindings="Config.fixed_photo_mask_dir='${MASK_DIR}'" \
+  --gin_bindings="Config.depth_loss_type='mse'" \
+  --gin_bindings="Config.lambda_depth=0.05" \
+  --gin_bindings="Config.sample_every=2" \
+  --gin_bindings="Config.auto_adjust_near_far=True" \
+  --gin_bindings="Config.near=0.2" \
+  --gin_bindings="Config.far=1000000.0" \
+  --gin_bindings="Model.opaque_background=True" \
+  --gin_bindings="Model.raydist_fn=@jnp.reciprocal" \
+  --gin_bindings="NerfMLP.disable_density_normals=True" \
+  --gin_bindings="NerfMLP.net_depth=8" \
+  --gin_bindings="NerfMLP.net_width=1024" \
+  --gin_bindings="NerfMLP.warp_fn=@coord.contract" \
+  --gin_bindings="PropMLP.disable_density_normals=True" \
+  --gin_bindings="PropMLP.disable_rgb=True" \
+  --gin_bindings="PropMLP.net_depth=4" \
+  --gin_bindings="PropMLP.net_width=256" \
+  --gin_bindings="PropMLP.warp_fn=@coord.contract" \
+  --logtostderr
+```
+
+### MipNeRF-360 Ablation Results
+
+The following PSNR values are from KITTI Seq02 using `sample_every=2`.
+
+| Setting | Mean PSNR |
+| --- | ---: |
+| RGB-only, no depth | 20.3882 |
+| Global DA2 depth, `lambda_depth=0.05` | 19.8834 |
+| Global DA2 depth, `lambda_depth=0.10` | 20.2170 |
+| Global DA2 depth, `lambda_depth=0.15` | 20.6066 |
+| Fixed low-error mask, threshold 0.16, `lambda_depth=0.15` | 20.5807 |
+
+The results indicate that DA2 depth supervision is sensitive to the depth loss weight. Fixed photometric masks can improve some low-weight settings by filtering high-error pixels, while the best observed configuration in this set uses global DA2 supervision with `lambda_depth=0.15`.
+
