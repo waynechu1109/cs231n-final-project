@@ -827,3 +827,208 @@ def sweep_eval(
         print(json.dumps(metrics, indent=2))
     print("\n========== Combined ==========")
     print(json.dumps(summary, indent=2))
+
+
+def _transforms_path_for_dataset(
+    dataset_family: str,
+    slug: str,
+    mip360_scene: str,
+) -> Path:
+    if dataset_family == "mip360":
+        return PROJECT_ROOT / "data/nerfstudio" / f"{mip360_scene}_sparse" / "transforms.json"
+    if dataset_family == "kitti":
+        return PROJECT_ROOT / "data/nerfstudio" / f"{slug}_sparse_every2" / "transforms.json"
+    raise ValueError(f"Unknown dataset_family: {dataset_family}")
+
+
+def _enrich_views_with_positions(views: list[dict], transforms_path: Path) -> list[dict]:
+    import json
+
+    meta = json.loads(transforms_path.read_text())
+    frames = sorted(meta["frames"], key=lambda fr: Path(fr["file_path"]).name)
+    name_to_frame = {Path(f["file_path"]).name: f for f in frames}
+    if "test_filenames" in meta:
+        test_names = [Path(p).name for p in meta["test_filenames"]]
+    else:
+        hold_every = 10
+        test_names = [
+            Path(frame["file_path"]).name
+            for idx, frame in enumerate(frames)
+            if idx % hold_every == hold_every - 1
+        ]
+
+    enriched = []
+    for view in views:
+        entry = dict(view)
+        filename = entry.get("filename") or test_names[int(entry["index"])]
+        entry["filename"] = filename
+        frame = name_to_frame[filename]
+        c2w = frame["transform_matrix"]
+        entry["position_xyz"] = [float(c2w[i][3]) for i in range(3)]
+        entry["sparse_frame_index"] = next(
+            i for i, f in enumerate(frames) if Path(f["file_path"]).name == filename
+        )
+        if "colmap_im_id" in frame:
+            entry["colmap_im_id"] = frame["colmap_im_id"]
+        enriched.append(entry)
+    return enriched
+
+
+def _pick_random_test_views(transforms_path: Path, num_views: int, seed: int) -> list[dict]:
+    import json
+    import random
+
+    meta = json.loads(transforms_path.read_text())
+    if "test_filenames" in meta:
+        names = [Path(p).name for p in meta["test_filenames"]]
+    else:
+        frames = sorted(meta["frames"], key=lambda fr: Path(fr["file_path"]).name)
+        hold_every = 10
+        names = [
+            Path(frame["file_path"]).name
+            for idx, frame in enumerate(frames)
+            if idx % hold_every == hold_every - 1
+        ]
+    if num_views > len(names):
+        raise ValueError(f"Requested {num_views} views but only {len(names)} test frames exist.")
+    rng = random.Random(seed)
+    indices = sorted(rng.sample(range(len(names)), num_views))
+    return [{"split": "test", "index": idx, "filename": names[idx]} for idx in indices]
+
+
+#
+# Usage (bicycle, 5 random test views, nomask + multiple thresholds):
+#   modal run modal_train_splatfacto.py::render_bicycle_compare \
+#     --dataset-family mip360 --mip360-scene bicycle \
+#     --num-views 5 --seed 42 \
+#     --thresholds "0.14 0.16 0.18 0.20 0.22 1.0"
+# ---------------------------------------------------------------------------
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=60 * 60 * 1,
+    volumes={
+        DATA_MOUNT: data_vol,
+        OUT_MOUNT: out_vol,
+    },
+    env={"TORCHDYNAMO_DISABLE": "1"},
+)
+def render_views_run(exp_name: str, views: list, compare_tag: str) -> str:
+    import glob
+    import json
+    import sys
+
+    sys.path.insert(0, "/opt/project_scripts")
+    from render_bicycle_compare_views import render_views_for_config
+
+    pattern = f"{OUT_MOUNT}/{exp_name}/splatfacto-da2/*/config.yml"
+    configs = sorted(glob.glob(pattern))
+    if not configs:
+        raise FileNotFoundError(f"No config.yml found: {pattern}")
+    config_path = configs[-1]
+    output_dir = f"{OUT_MOUNT}/compare_renders/{compare_tag}/{exp_name}"
+    print(f"Rendering {exp_name}")
+    print(f"  config: {config_path}")
+    print(f"  output: {output_dir}")
+
+    manifest = render_views_for_config(
+        load_config=Path(config_path),
+        views=views,
+        output_dir=Path(output_dir),
+    )
+    out_vol.commit()
+    print(json.dumps(manifest, indent=2))
+    return output_dir
+
+
+@app.local_entrypoint()
+def render_bicycle_compare(
+    lambdas: str = "0.0 0.05 0.1 0.15",
+    depth_sup_type: str = "da2",
+    max_num_iterations: int = 50000,
+    photo_mask_mode: str = "low",
+    thresholds: str = "0.14",
+    include_nomask: bool = True,
+    include_masked: bool = True,
+    num_views: int = 5,
+    seed: int = 42,
+    compare_tag: str = "",
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    dataset_family: str = "mip360",
+    mip360_scene: str = "bicycle",
+):
+    import json
+
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
+    )
+
+    transforms_path = _transforms_path_for_dataset(dataset_family, slug, mip360_scene)
+    if not transforms_path.exists():
+        raise FileNotFoundError(f"Missing {transforms_path}")
+
+    views = _enrich_views_with_positions(
+        _pick_random_test_views(transforms_path, num_views, seed),
+        transforms_path,
+    )
+    if not compare_tag:
+        prefix = "kitti" if dataset_family == "kitti" else mip360_scene
+        compare_tag = f"{prefix}_random{num_views}_seed{seed}"
+    lambda_list = [float(v) for v in lambdas.split()]
+    threshold_list = [float(v) for v in thresholds.split()]
+    exp_names: list[str] = []
+    if include_nomask:
+        exp_names.extend(
+            _experiment_name(
+                slug, sparse_tag, depth_sup_type, lam, max_num_iterations,
+            )
+            for lam in lambda_list
+        )
+    if include_masked:
+        for thresh in threshold_list:
+            exp_names.extend(
+                _experiment_name(
+                    slug, sparse_tag, depth_sup_type, lam, max_num_iterations,
+                    photo_mask_mode=photo_mask_mode,
+                    photo_mask_threshold=thresh,
+                    masked=True,
+                )
+                for lam in lambda_list
+            )
+
+    local_manifest_dir = PROJECT_ROOT / "local_outputs" / "compare_renders" / compare_tag
+    local_manifest_dir.mkdir(parents=True, exist_ok=True)
+    views_path = local_manifest_dir / "selected_views.json"
+    views_path.write_text(json.dumps(views, indent=2) + "\n")
+
+    print(f"Compare tag:     {compare_tag}")
+    print(f"Selected views:  {views_path}")
+    for view in views:
+        pos = view.get("position_xyz", [])
+        pos_str = f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})" if pos else "?"
+        print(
+            f"  test[{view['index']:02d}]  {view['filename']}  "
+            f"pos={pos_str}  sparse_idx={view.get('sparse_frame_index', '?')}"
+        )
+    print(f"\nRendering {len(exp_names)} experiments in parallel:")
+    for name in exp_names:
+        print(f"  {name}")
+
+    output_dirs = list(
+        render_views_run.starmap([(name, views, compare_tag) for name in exp_names])
+    )
+
+    summary = {
+        "compare_tag": compare_tag,
+        "views": views,
+        "experiments": dict(zip(exp_names, output_dirs)),
+    }
+    summary_path = local_manifest_dir / "summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+
+    print("\n========== Render Complete ==========")
+    print(f"Local manifest:  {summary_path}")
+    print(f"Modal outputs:   nerf-outputs/compare_renders/{compare_tag}/")
+    print("\nDownload:")
+    print(f"  modal volume get nerf-outputs compare_renders/{compare_tag} ./local_outputs/compare_renders/{compare_tag}")
+    print(json.dumps(summary, indent=2))
