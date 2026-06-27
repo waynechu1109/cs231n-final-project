@@ -48,6 +48,7 @@ import modal
 PROJECT_ROOT = Path(__file__).parent
 NERFSTUDIO_LOCAL = PROJECT_ROOT / "nerfstudio"
 SCRIPTS_LOCAL = PROJECT_ROOT / "scripts"
+DA2_LOCAL = PROJECT_ROOT / "Depth-Anything-V2"
 
 # ---------------------------------------------------------------------------
 # Modal volumes
@@ -128,6 +129,23 @@ image = (
     .add_local_dir(SCRIPTS_LOCAL, "/opt/project_scripts")
 )
 
+# Lightweight image for DA2 depth inference (no tcnn/gsplat needed).
+_da2_image = (
+    modal.Image.from_registry(
+        "nvidia/cuda:11.8.0-runtime-ubuntu22.04",
+        add_python="3.10",
+    )
+    .apt_install("libgl1", "libglib2.0-0")
+    .pip_install(
+        "torch==2.1.2+cu118",
+        "torchvision==0.16.2+cu118",
+        extra_options="--extra-index-url https://download.pytorch.org/whl/cu118",
+    )
+    .pip_install("numpy<2.0.0", "opencv-python-headless", "huggingface_hub", "tqdm")
+    .add_local_dir(DA2_LOCAL, "/opt/da2", copy=True)
+    .add_local_dir(SCRIPTS_LOCAL, "/opt/project_scripts")
+)
+
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -190,15 +208,18 @@ def _experiment_name(
     photo_mask_mode: str = "low",
     photo_mask_threshold: float = 0.12,
     masked: bool = False,
+    mask_label: str = "",
 ) -> str:
-    if photo_mask_dir or masked:
+    if mask_label:
+        final_label = mask_label
+    elif photo_mask_dir or masked:
         thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
-        mask_label = f"{photo_mask_mode}{thresh_tag}"
+        final_label = f"{photo_mask_mode}{thresh_tag}"
     else:
-        mask_label = "nomask"
+        final_label = "nomask"
     return (
         f"{slug}{sparse_tag}_{depth_sup_type}_lambda{lambda_depth}_"
-        f"{mask_label}_{max_num_iterations}"
+        f"{final_label}_{max_num_iterations}"
     )
 
 
@@ -265,6 +286,7 @@ def train(
     photo_mask_threshold: float = 0.12,
     dataset_family: str = "kitti",
     mip360_scene: str = "bicycle",
+    mask_label: str = "",
 ):
     import os
     import shutil
@@ -280,6 +302,7 @@ def train(
         photo_mask_dir=photo_mask_dir,
         photo_mask_mode=photo_mask_mode,
         photo_mask_threshold=photo_mask_threshold,
+        mask_label=mask_label,
     )
 
     # ---- sanity checks -------------------------------------------------
@@ -755,6 +778,7 @@ def run_eval(
     masked: bool = False,
     dataset_family: str = "kitti",
     mip360_scene: str = "bicycle",
+    mask_label: str = "",
 ):
     import json
 
@@ -767,6 +791,7 @@ def run_eval(
         photo_mask_mode=photo_mask_mode,
         photo_mask_threshold=photo_mask_threshold,
         masked=masked,
+        mask_label=mask_label,
     )
 
     print(f"Evaluating: {exp_name}")
@@ -827,3 +852,484 @@ def sweep_eval(
         print(json.dumps(metrics, indent=2))
     print("\n========== Combined ==========")
     print(json.dumps(summary, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# generate_matched_masks — matched-ratio mask generation for ablation study
+#
+# Generates masks that select exactly as many valid-depth pixels as low018,
+# but using a different selection criterion (high-error or random).
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::run_matched_ablation \
+#     --base-exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000" \
+#     --lambda-depth 0.1
+# ---------------------------------------------------------------------------
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=60 * 60 * 2,
+    volumes={
+        DATA_MOUNT: data_vol,
+        OUT_MOUNT: out_vol,
+    },
+    env={"TORCHDYNAMO_DISABLE": "1"},
+)
+def generate_matched_masks(
+    base_exp_name: str,
+    mode: str,
+    ref_threshold: float = 0.18,
+    seed: int = 0,
+) -> tuple:
+    """Generate matched-ratio masks and return (mask_dir, mask_label).
+
+    mode must be "high_matched" or "random_matched".
+    Masks are stored at DATA_MOUNT/masks/<base_exp_name>_<mask_label>/
+    """
+    import glob
+    import subprocess
+
+    pattern = f"{OUT_MOUNT}/{base_exp_name}/splatfacto-da2/*/config.yml"
+    configs = sorted(glob.glob(pattern))
+    if not configs:
+        raise FileNotFoundError(
+            f"No config.yml found matching:\n  {pattern}\n"
+            "Run the nomask base training first."
+        )
+    config_path = configs[-1]
+    print(f"Using config: {config_path}")
+
+    # Build mask label and output dir
+    ref_tag = f"{ref_threshold:.2f}".replace(".", "")  # 0.18 -> "018"
+    if mode == "high_matched":
+        mask_label = f"high_error_matched_low{ref_tag}"
+    elif mode == "random_matched":
+        mask_label = f"random_matched_low{ref_tag}_seed{seed}"
+    else:
+        raise ValueError(f"Unknown mode: {mode}. Use 'high_matched' or 'random_matched'.")
+
+    mask_dir = f"{DATA_MOUNT}/masks/{base_exp_name}_{mask_label}"
+
+    cmd = [
+        "python", "/opt/project_scripts/generate_matched_ratio_masks.py",
+        "--load-config", config_path,
+        "--output-dir", mask_dir,
+        "--mode", mode,
+        "--ref-threshold", str(ref_threshold),
+        "--seed", str(seed),
+    ]
+    print(f"Generating {mode} masks → {mask_dir}")
+    subprocess.run(cmd, check=True)
+    data_vol.commit()
+    print(f"Masks written to: {mask_dir}  label: {mask_label}")
+    return mask_dir, mask_label
+
+
+@app.local_entrypoint()
+def run_matched_ablation(
+    base_exp_name: str = "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000",
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.1,
+    ref_threshold: float = 0.18,
+    seed: int = 0,
+    depth_loss_type: str = "mse",
+    max_num_iterations: int = 50000,
+):
+    """Two-stage ablation pipeline.
+
+    Stage 1: generate high_error_matched and random_matched masks in parallel.
+    Stage 2: train both masked experiments in parallel.
+
+    Experiment names produced:
+      kitti_seq02_0034_sparse_every2_da2_lambda<l>_high_error_matched_low018_<iters>
+      kitti_seq02_0034_sparse_every2_da2_lambda<l>_random_matched_low018_seed0_<iters>
+    """
+    import json
+
+    print(f"\nBase experiment: {base_exp_name}")
+    print(f"lambda_depth: {lambda_depth}  ref_threshold: {ref_threshold}  seed: {seed}")
+
+    # Stage 1: generate both mask sets in parallel
+    print("\n[Stage 1] Generating matched-ratio masks (high_error + random) in parallel...")
+    mask_results = list(generate_matched_masks.starmap([
+        (base_exp_name, "high_matched", ref_threshold, seed),
+        (base_exp_name, "random_matched", ref_threshold, seed),
+    ]))
+    (high_mask_dir, high_label), (rand_mask_dir, rand_label) = mask_results
+    print(f"\n  high_matched  mask dir:   {high_mask_dir}")
+    print(f"  high_matched  mask label: {high_label}")
+    print(f"  random_matched mask dir:   {rand_mask_dir}")
+    print(f"  random_matched mask label: {rand_label}")
+
+    # Stage 2: train both experiments in parallel
+    # Tuple order matches train() positional signature:
+    #   kitti_seq_dir, lambda_depth, depth_loss_type, depth_sup_type,
+    #   max_num_iterations, photo_mask_dir, photo_mask_mode, photo_mask_threshold,
+    #   dataset_family, mip360_scene, mask_label
+    print("\n[Stage 2] Launching 2 masked training runs in parallel...")
+    for _ in train.starmap([
+        (
+            kitti_seq_dir, lambda_depth, depth_loss_type, "da2",
+            max_num_iterations, high_mask_dir, "low", ref_threshold,
+            "kitti", "bicycle", high_label,
+        ),
+        (
+            kitti_seq_dir, lambda_depth, depth_loss_type, "da2",
+            max_num_iterations, rand_mask_dir, "low", ref_threshold,
+            "kitti", "bicycle", rand_label,
+        ),
+    ]):
+        pass
+
+    print("\n========== Matched-ratio ablation complete ==========")
+    print(f"Evaluate with:")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --lambda-depth {lambda_depth} --mask-label '{high_label}'")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --lambda-depth {lambda_depth} --mask-label '{rand_label}'")
+
+
+@app.local_entrypoint()
+def run_random_seed_sweep(
+    base_exp_name: str = "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000",
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.1,
+    ref_threshold: float = 0.18,
+    seeds: str = "1,2",
+    depth_loss_type: str = "mse",
+    max_num_iterations: int = 50000,
+):
+    """Generate random_matched masks and train for multiple seeds in parallel.
+
+    Use this to add extra seeds to an existing random_matched ablation
+    (seed=0 already trained via run_matched_ablation).
+
+    Example:
+      modal run modal_train_splatfacto.py::run_random_seed_sweep --seeds "1,2"
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    print(f"\nBase experiment: {base_exp_name}")
+    print(f"lambda_depth: {lambda_depth}  ref_threshold: {ref_threshold}  seeds: {seed_list}")
+
+    # Stage 1: generate random_matched masks for all seeds in parallel
+    print(f"\n[Stage 1] Generating random_matched masks for seeds {seed_list} in parallel...")
+    mask_args = [(base_exp_name, "random_matched", ref_threshold, s) for s in seed_list]
+    mask_results = list(generate_matched_masks.starmap(mask_args))
+
+    for (mask_dir, mask_label) in mask_results:
+        print(f"  {mask_label}: {mask_dir}")
+
+    # Stage 2: train all seeds in parallel
+    print(f"\n[Stage 2] Launching {len(seed_list)} training runs in parallel...")
+    train_args = [
+        (
+            kitti_seq_dir, lambda_depth, depth_loss_type, "da2",
+            max_num_iterations, mask_dir, "low", ref_threshold,
+            "kitti", "bicycle", mask_label,
+        )
+        for (mask_dir, mask_label) in mask_results
+    ]
+    for _ in train.starmap(train_args):
+        pass
+
+    print("\n========== Random seed sweep complete ==========")
+    print("Evaluate with:")
+    for (_, mask_label) in mask_results:
+        print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+        print(f"    --lambda-depth {lambda_depth} --mask-label '{mask_label}'")
+
+
+# ---------------------------------------------------------------------------
+# prepare_kitti_seq — data prep for a new KITTI sequence (runs on Modal GPU)
+#
+# Generates:
+#   DATA_MOUNT/nerfstudio/<slug>_sparse_every2/transforms.json  (from COLMAP)
+#   DATA_MOUNT/kitti/.../depths_da2/                            (DA2 + GT align)
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::run_new_seq_experiments \
+#     --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt"
+# ---------------------------------------------------------------------------
+@app.function(
+    image=_da2_image,
+    gpu="A10G",
+    timeout=60 * 60 * 3,
+    volumes={DATA_MOUNT: data_vol},
+)
+def prepare_kitti_seq(
+    kitti_seq_dir: str,
+    encoder: str = "vitl",
+    hold_every: int = 10,
+) -> str:
+    """Generate transforms.json (from COLMAP) and depths_da2 (DA2 + align) for a new sequence.
+
+    Returns the slug (e.g. 'kitti_seq05_0018') so the caller can derive experiment names.
+    """
+    import os
+    import re
+    import subprocess
+    import sys
+
+    sys.path.insert(0, "/opt/da2")
+    sys.path.insert(0, "/opt/project_scripts")
+
+    sparse_root = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq_sparse_every2"
+    seq_dir = f"{sparse_root}/{kitti_seq_dir}"
+    img_dir = f"{seq_dir}/images"
+    gt_dir = f"{seq_dir}/depths_gt"
+
+    m = re.search(r"KITTISeq(\d+)_.*drive_(\d+)_sync", kitti_seq_dir)
+    if not m:
+        raise ValueError(f"Cannot derive slug from: {kitti_seq_dir}")
+    slug = f"kitti_seq{m.group(1)}_{m.group(2)}"
+    nerfstudio_dst = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2"
+
+    # ---- Step 1: generate transforms.json from COLMAP (text format) --------
+    # Always regenerate — the script auto-corrects for cropped images, so we
+    # must not reuse a stale transforms.json that may have wrong w/h.
+    print(f"[Step 1] Generating transforms.json for {slug}...")
+    subprocess.run([
+        "python", "/opt/project_scripts/colmap_to_nerfstudio_transforms.py",
+        "--output-dir", seq_dir,
+    ], check=True)
+
+    # Add train/val/test splits and set up the nerfstudio directory.
+    # --overwrite removes any stale destination before recreating.
+    subprocess.run([
+        "python", "/opt/project_scripts/make_nerfstudio_kitti_sparse.py",
+        "--src", seq_dir,
+        "--dst", nerfstudio_dst,
+        "--images", img_dir,
+        "--stride", "1",
+        "--hold-every", str(hold_every),
+        "--copy-images",
+        "--overwrite",
+    ], check=True)
+    data_vol.commit()
+    print(f"  transforms.json → {nerfstudio_dst}")
+
+    # Delete the derived _da2 nerfstudio dataset so train() rebuilds it from
+    # the freshly-generated transforms.json (avoids stale w/h mismatch).
+    import shutil
+    da2_derived = f"{DATA_MOUNT}/nerfstudio/{slug}_sparse_every2_da2"
+    if os.path.exists(da2_derived):
+        shutil.rmtree(da2_derived)
+        data_vol.commit()
+        print(f"  Cleared stale {da2_derived}")
+
+    # ---- Step 2: DA2 inference + align to GT -------------------------------
+    da2_out = f"{seq_dir}/depths_da2"
+    if os.path.exists(da2_out) and len(os.listdir(da2_out)) > 0:
+        print(f"[Step 2] depths_da2 already exists — skipping")
+    else:
+        print(f"[Step 2] Running DA2 ({encoder}) inference...")
+        from huggingface_hub import hf_hub_download
+        ckpt_map = {
+            "vits": ("depth-anything/Depth-Anything-V2-Small", "depth_anything_v2_vits.pth"),
+            "vitb": ("depth-anything/Depth-Anything-V2-Base", "depth_anything_v2_vitb.pth"),
+            "vitl": ("depth-anything/Depth-Anything-V2-Large", "depth_anything_v2_vitl.pth"),
+        }
+        repo_id, filename = ckpt_map[encoder]
+        ckpt_path = hf_hub_download(repo_id=repo_id, filename=filename, local_dir="/tmp/da2_ckpt")
+        print(f"  checkpoint: {ckpt_path}")
+
+        raw_dir = f"{seq_dir}/depths_da2_raw_npy"
+        os.makedirs(raw_dir, exist_ok=True)
+        subprocess.run([
+            "python", "/opt/da2/run_da2_save_npy.py",
+            "--img-dir", img_dir,
+            "--out-dir", raw_dir,
+            "--encoder", encoder,
+            "--checkpoint", ckpt_path,
+        ], check=True, cwd="/opt/da2")
+
+        os.makedirs(da2_out, exist_ok=True)
+        subprocess.run([
+            "python", "/opt/da2/align_da2_to_kitti.py",
+            "--da2-npy-dir", raw_dir,
+            "--gt-depth-dir", gt_dir,
+            "--out-dir", da2_out,
+        ], check=True)
+        data_vol.commit()
+        print(f"  depths_da2 → {da2_out}")
+
+    return slug
+
+
+@app.local_entrypoint()
+def run_new_seq_experiments(
+    kitti_seq_dir: str = "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt",
+    lambda_depth: float = 0.1,
+    ref_threshold: float = 0.18,
+    encoder: str = "vitl",
+    depth_loss_type: str = "mse",
+    max_num_iterations: int = 50000,
+):
+    """Three-experiment ablation on a new KITTI sequence.
+
+    Stage 1: prepare data (transforms.json + depths_da2) on Modal.
+    Stage 2: train RGB-only (lambda=0) and Global-depth (lambda) in parallel.
+    Stage 3: generate low018 mask from the Global-depth checkpoint, train masked run.
+
+    Experiment names produced:
+      <slug>_sparse_every2_da2_lambda0.0_nomask_<iters>   (RGB-only)
+      <slug>_sparse_every2_da2_lambda<l>_nomask_<iters>   (Global depth)
+      <slug>_sparse_every2_da2_lambda<l>_low018_<iters>   (Low-error mask)
+    """
+    print(f"\nPreparing new sequence: {kitti_seq_dir}")
+
+    # Stage 1: data prep
+    slug = prepare_kitti_seq.remote(kitti_seq_dir, encoder=encoder)
+    print(f"  slug: {slug}")
+
+    nomask_exp = (
+        f"{slug}_sparse_every2_da2_lambda{lambda_depth}_nomask_{max_num_iterations}"
+    )
+
+    # Stage 2: RGB-only + Global depth in parallel
+    print("\n[Stage 2] Training RGB-only and Global-depth in parallel...")
+    for _ in train.starmap([
+        (kitti_seq_dir, 0.0, depth_loss_type, "da2", max_num_iterations,
+         "", "low", ref_threshold, "kitti", "bicycle", ""),
+        (kitti_seq_dir, lambda_depth, depth_loss_type, "da2", max_num_iterations,
+         "", "low", ref_threshold, "kitti", "bicycle", ""),
+    ]):
+        pass
+
+    # Stage 3: generate low018 mask from Global-depth checkpoint, then retrain
+    thresh_tag = f"{ref_threshold:.2f}".replace(".", "")
+    print(f"\n[Stage 3] Generating low{thresh_tag} mask from {nomask_exp}...")
+    mask_dir = generate_masks.remote(nomask_exp, ref_threshold, photo_mask_mode="low")
+
+    print(f"\n[Stage 3] Training low{thresh_tag} masked run...")
+    train.remote(
+        kitti_seq_dir, lambda_depth, depth_loss_type, "da2",
+        max_num_iterations, mask_dir, "low", ref_threshold,
+        "kitti", "bicycle",
+    )
+
+    print("\n========== New-sequence experiments complete ==========")
+    print("Evaluate with:")
+    print(f"\n  # RGB-only")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --kitti-seq-dir '{kitti_seq_dir}' --lambda-depth 0.0")
+    print(f"\n  # Global depth (nomask)")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --kitti-seq-dir '{kitti_seq_dir}' --lambda-depth {lambda_depth}")
+    print(f"\n  # Low-error mask τ={ref_threshold}")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --kitti-seq-dir '{kitti_seq_dir}' --lambda-depth {lambda_depth} \\")
+    print(f"    --photo-mask-threshold {ref_threshold} --masked")
+
+
+# ---------------------------------------------------------------------------
+# Render the test split of a trained experiment with ns-render dataset and
+# save into compare_renders/<tag>/<exp_name>/test/rgb/.
+# Use render_named_views to drive a grid of (threshold x lambda) renders.
+# ---------------------------------------------------------------------------
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=60 * 60 * 1,
+    volumes={DATA_MOUNT: data_vol, OUT_MOUNT: out_vol},
+    env={"TORCHDYNAMO_DISABLE": "1"},
+)
+def render_test_split(exp_name: str, compare_tag: str) -> str:
+    import glob, subprocess
+
+    pattern = f"{OUT_MOUNT}/{exp_name}/splatfacto-da2/*/config.yml"
+    configs = sorted(glob.glob(pattern))
+    if not configs:
+        raise FileNotFoundError(f"No config.yml found: {pattern}")
+    config_path = configs[-1]
+    output_dir = f"{OUT_MOUNT}/compare_renders/{compare_tag}/{exp_name}"
+    print(f"Rendering test split for {exp_name}")
+    print(f"  config: {config_path}")
+    print(f"  output: {output_dir}")
+
+    subprocess.run(
+        [
+            "ns-render", "dataset",
+            "--load-config", config_path,
+            "--output-path", output_dir,
+            "--split", "test",
+            "--rendered-output-names", "rgb",
+        ],
+        check=True,
+    )
+    out_vol.commit()
+    return output_dir
+
+
+@app.local_entrypoint()
+def render_named_views(
+    view_filenames: str = "00000158.png",
+    lambdas: str = "0.05 0.1 0.15",
+    thresholds: str = "0.16 0.18 0.20 0.22",
+    photo_mask_mode: str = "low",
+    depth_sup_type: str = "da2",
+    max_num_iterations: int = 50000,
+    include_nomask: bool = False,
+    include_masked: bool = True,
+    compare_tag: str = "",
+    dataset_family: str = "kitti",
+    mip360_scene: str = "bicycle",
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+):
+    """Render a specific test view across a grid of (threshold, lambda) experiments.
+
+    Uses ns-render dataset which renders all test views into
+      compare_renders/<tag>/<exp_name>/test/rgb/<view_filename>
+    After download, pick the desired view filename for the paper figure.
+    """
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        dataset_family, kitti_seq_dir, mip360_scene, depth_sup_type
+    )
+
+    lambda_list = [float(v) for v in lambdas.split()]
+    threshold_list = [float(v) for v in thresholds.split()]
+    requested_views = view_filenames.split()
+    if not compare_tag:
+        view_tag = "_".join(Path(v).stem for v in requested_views)
+        prefix = "kitti" if dataset_family == "kitti" else mip360_scene
+        compare_tag = f"{prefix}_named_{view_tag}"
+
+    exp_names: list[str] = []
+    if include_nomask:
+        exp_names.extend(
+            _experiment_name(
+                slug, sparse_tag, depth_sup_type, lam, max_num_iterations,
+            )
+            for lam in lambda_list
+        )
+    if include_masked:
+        for thresh in threshold_list:
+            exp_names.extend(
+                _experiment_name(
+                    slug, sparse_tag, depth_sup_type, lam, max_num_iterations,
+                    photo_mask_mode=photo_mask_mode,
+                    photo_mask_threshold=thresh,
+                    masked=True,
+                )
+                for lam in lambda_list
+            )
+
+    print(f"Compare tag:     {compare_tag}")
+    print(f"Requested views: {requested_views}")
+    print(f"\nRendering {len(exp_names)} experiments in parallel:")
+    for name in exp_names:
+        print(f"  {name}")
+
+    output_dirs = list(
+        render_test_split.starmap([(name, compare_tag) for name in exp_names])
+    )
+
+    print("\n========== Render Complete ==========")
+    print(f"Modal outputs:   nerf-outputs/compare_renders/{compare_tag}/")
+    for name, out in zip(exp_names, output_dirs):
+        print(f"  {name} -> {out}")
+    print("\nDownload:")
+    print(
+        f"  modal volume get nerf-outputs compare_renders/{compare_tag} "
+        f"./local_outputs/compare_renders/{compare_tag}"
+    )

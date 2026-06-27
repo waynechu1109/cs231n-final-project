@@ -50,6 +50,17 @@ Pixels with $e(u) < \tau$ form the binary reliability mask $M(u)$. This mask is 
 
 We sweep τ ∈ {0.14, 0.16, 0.18, 0.20, 0.22, 1.0} and λ ∈ {0.05, 0.10, 0.15}.
 
+### Matched-Ratio Ablation
+
+To test whether the benefit of low-error masking comes from **selecting reliable pixels** vs simply **using fewer pixels**, we construct two control masks that match the exact pixel budget of `low018` (i.e. the same number of supervised pixels per frame):
+
+- **High-error matched** — selects the *k* valid-depth pixels with the **highest** photometric error per frame.
+- **Random matched** — selects *k* valid-depth pixels **uniformly at random** per frame (three seeds for stability).
+
+where *k* = |{u : valid_depth(u) ∧ e(u) < 0.18}| per frame, computed from the RGB-only baseline.
+
+All ablation runs use λ = 0.10, τ = 0.18 on KITTISeq02 every-2.
+
 ---
 
 ## Repository Layout
@@ -196,22 +207,151 @@ Each run writes to `outputs/<dataset>_lambda<value>/splatfacto-da2/<timestamp>/`
 ```bash
 pip install modal
 modal setup          # one-time auth
+```
 
-# Single run (A10G, detached)
+### Single run / lambda sweep
+
+```bash
+# Single run (A10G, default seq02, λ=0.05)
 modal run --detach modal_train_splatfacto.py::main
 
-# Lambda sweep (parallel A10G containers)
-modal run --detach modal_train_splatfacto.py::sweep --lambdas "0.0 0.05 0.1 0.2"
+# Lambda sweep — parallel A10G containers
+modal run --detach modal_train_splatfacto.py::sweep --lambdas "0.0 0.05 0.1 0.15"
+```
 
-# Eval a completed run
-modal run modal_train_splatfacto.py::run_eval --lambda-depth 0.05
+### Threshold sweep (two-stage: mask gen → retrain)
 
-# Download outputs
+Requires a nomask base run to exist first (produced by `sweep` above).
+
+```bash
+modal run modal_train_splatfacto.py::sweep_threshold \
+  --base-exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000" \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambda-depth 0.1 \
+  --thresholds "0.16 0.18 0.20 0.22 1.0"
+```
+
+### Lambda × threshold joint sweep
+
+```bash
+modal run modal_train_splatfacto.py::sweep_lambda_threshold \
+  --lambdas "0.05 0.1 0.15" \
+  --thresholds "0.16 0.18 0.20 0.22 1.0"
+```
+
+### Matched-ratio ablation (high-error vs random masks)
+
+```bash
+# Generates both high_error_matched and random_matched (seed 0) masks, then trains both.
+modal run modal_train_splatfacto.py::run_matched_ablation \
+  --base-exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000" \
+  --lambda-depth 0.1
+```
+
+### Random-seed stability sweep
+
+```bash
+# Add seed 1 and seed 2 (seed 0 is produced by run_matched_ablation).
+modal run modal_train_splatfacto.py::run_random_seed_sweep --seeds "1,2"
+```
+
+### Cross-sequence generalization (new KITTI sequence)
+
+Handles full data preparation (COLMAP → transforms, DA-V2 inference, GT alignment) and
+trains all three key experiments in one command.
+
+```bash
+# KITTISeq05 — three experiments: RGB-only, Global depth, Low-error mask τ=0.18
+modal run modal_train_splatfacto.py::run_new_seq_experiments \
+  --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt"
+```
+
+### Evaluation
+
+```bash
+# Single experiment
+modal run modal_train_splatfacto.py::run_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambda-depth 0.1
+
+# With mask (add --masked for threshold-based experiments)
+modal run modal_train_splatfacto.py::run_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambda-depth 0.1 --photo-mask-threshold 0.18 --masked
+
+# Ablation experiments (use --mask-label)
+modal run modal_train_splatfacto.py::run_eval \
+  --lambda-depth 0.1 --mask-label "high_error_matched_low018"
+modal run modal_train_splatfacto.py::run_eval \
+  --lambda-depth 0.1 --mask-label "random_matched_low018_seed0"
+
+# Parallel eval of all lambda values
+modal run modal_train_splatfacto.py::sweep_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambdas "0.0 0.05 0.1 0.15" --photo-mask-threshold 0.18 --masked
+```
+
+### Download outputs
+
+```bash
 modal volume get nerf-outputs <exp_name> ./local_outputs
 tensorboard --logdir ./local_outputs/<exp_name>/splatfacto-da2/<timestamp>
 ```
 
 See [docs/modal-splatfacto.md](docs/modal-splatfacto.md) for full setup, dataset upload, sweep options, and cost estimates.
+
+---
+
+## Modal Cloud Training — Mip-NeRF-360
+
+```bash
+pip install modal
+modal setup          # one-time auth
+```
+
+**`modal_train_mipnerf.py`** — JAX/Flax-based Mip-NeRF-360 training on Modal (A10G).
+
+Prerequisite: `depths_da2` must already exist in `kitti-nerf-data` for the target
+sequence. Run `modal_train_splatfacto.py::run_new_seq_experiments` first to populate it.
+
+### Three-experiment generalization check (new KITTI sequence)
+
+Runs all three key experiments in one command:
+RGB-only → Global depth → Low-error mask (τ=0.18, λ=0.15).
+
+```bash
+modal run modal_train_mipnerf.py::run_kitti_seq_experiments \
+  --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt" \
+  --lambda-depth 0.15 \
+  --ref-threshold 0.18
+```
+
+Experiment names produced:
+- `kitti_seq05_0018_sparse_every2_da2_lambda0.0_nomask_50000` (RGB-only)
+- `kitti_seq05_0018_sparse_every2_da2_lambda0.15_nomask_50000` (Global depth)
+- `kitti_seq05_0018_sparse_every2_da2_lambda0.15_low018_50000` (Low-error mask)
+
+### Evaluation
+
+```bash
+# RGB-only
+modal run modal_train_mipnerf.py::run_eval \
+  --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.0
+
+# Global depth
+modal run modal_train_mipnerf.py::run_eval \
+  --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.15
+
+# Low-error mask (add --masked)
+modal run modal_train_mipnerf.py::run_eval \
+  --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.15 --masked
+```
+
+### Download outputs
+
+```bash
+modal volume get nerf-outputs <exp_name>/mipnerf360 ./local_mipnerf_ckpt
+```
 
 ---
 
