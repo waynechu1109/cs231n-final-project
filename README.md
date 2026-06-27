@@ -3,6 +3,11 @@
 **CS231N Final Project — Stanford University**
 Wayne Chu · Yashasvini Gopalan · Changju Yuan
 
+<div class="links">
+  <a href="https://waynechu1109.github.io/paper/cs231n_paper.pdf"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b" alt="Paper"></a>
+  <a href="https://waynechu1109.github.io/slides/cs231n_poster.pdf"><img src="https://img.shields.io/badge/Poster-PDF-1f6feb" alt="Poster"></a>
+</div>
+
 ---
 
 ## Overview
