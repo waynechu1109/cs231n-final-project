@@ -21,6 +21,8 @@ import dm_pix
 import jax
 import jax.numpy as jnp
 import numpy as np
+import torch
+import lpips as lpips_lib
 
 _Array = Union[np.ndarray, jnp.ndarray]
 
@@ -129,13 +131,25 @@ class MetricHarness:
 
   def __init__(self):
     self.ssim_fn = jax.jit(dm_pix.ssim)
+    self.lpips_fn = lpips_lib.LPIPS(net='alex')
 
   def __call__(self, rgb_pred, rgb_gt, name_fn=lambda s: s):
     """Evaluate the error between a predicted rgb image and the true image."""
     psnr = float(mse_to_psnr(((rgb_pred - rgb_gt)**2).mean()))
-    # ssim = float(self.ssim_fn(rgb_pred, rgb_gt))
+    ssim = float(self.ssim_fn(rgb_pred, rgb_gt))
+
+    # LPIPS expects (N, C, H, W) tensors in [-1, 1].
+    def _to_lpips_tensor(img):
+      x = np.array(img, dtype=np.float32)  # (H, W, 3)
+      x = torch.from_numpy(x).permute(2, 0, 1).unsqueeze(0)  # (1, 3, H, W)
+      return x * 2.0 - 1.0  # [0,1] → [-1,1]
+
+    with torch.no_grad():
+      lpips_val = float(self.lpips_fn(
+          _to_lpips_tensor(rgb_pred), _to_lpips_tensor(rgb_gt)))
 
     return {
         name_fn('psnr'): psnr,
-        # name_fn('ssim'): ssim,
+        name_fn('ssim'): ssim,
+        name_fn('lpips'): lpips_val,
     }
