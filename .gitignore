@@ -89,3 +89,9 @@ __external_build__/
 *.log
 
 local_outputs/
+
+*.png
+*.jpg
+*.pdf
+
+/paper_plots
