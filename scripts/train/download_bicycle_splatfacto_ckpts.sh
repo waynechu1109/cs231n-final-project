@@ -3,13 +3,13 @@
 # from the Modal nerf-outputs volume.
 #
 # Usage:
-#   ./scripts/download_bicycle_splatfacto_ckpts.sh [local_dest]
+#   ./scripts/train/download_bicycle_splatfacto_ckpts.sh [local_dest]
 #
 # Default local_dest: ./local_outputs/bicycle_ckpts
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${1:-$ROOT/local_outputs/bicycle_ckpts}"
 VOLUME="nerf-outputs"
 PREFIX="bicycle_sparse_da2"

@@ -3,7 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 NERFSTUDIO_DIR="${PROJECT_ROOT}/nerfstudio"
 
 DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/data/nerfstudio/kitti_seq02_0034_da2}"
@@ -16,7 +17,7 @@ DEPTH_LOSS_TYPE="${DEPTH_LOSS_TYPE:-mse}"
 MAX_NUM_ITERATIONS="${MAX_NUM_ITERATIONS:-50000}"
 
 if [[ ! -f "${DATA_DIR}/transforms.json" ]]; then
-  python "${SCRIPT_DIR}/make_nerfstudio_kitti_depth.py" \
+  python "${SCRIPTS_ROOT}/data_prep/make_nerfstudio_kitti_depth.py" \
     --src "${NERFSTUDIO_SRC}" \
     --dst "${DATA_DIR}" \
     --depth-dir "${KITTI_SEQ_DIR}/depths_${DEPTH_SUP_TYPE}" \

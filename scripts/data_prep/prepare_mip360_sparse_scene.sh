@@ -5,7 +5,7 @@
 #   images/          RGB frames used by COLMAP
 #   sparse/0/        COLMAP model (cameras.bin, images.bin, ...)
 #   depths_da2_npy/  raw DA2 .npy (from run_da2_save_npy.py)
-#   depths_colmap/   COLMAP sparse depth (align reference; scripts/export_colmap_depths.py)
+#   depths_colmap/   COLMAP sparse depth (align reference; scripts/data_prep/export_colmap_depths.py)
 #   depths_da2/      DA2 scale-shift aligned to depths_colmap
 #
 # No depths_gt/ — Mip-360 has no KITTI LiDAR. Align via depths_colmap only.
@@ -15,12 +15,13 @@
 #   data/nerfstudio/${SCENE}_sparse_da2/             (depth paths wired)
 #
 # Usage (from repo root):
-#   SCENE=bicycle SCENE_DIR=/path/to/bicycle_sparse bash scripts/prepare_mip360_sparse_scene.sh
+#   SCENE=bicycle SCENE_DIR=/path/to/bicycle_sparse bash scripts/data_prep/prepare_mip360_sparse_scene.sh
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 
 SCENE="${SCENE:-bicycle}"
 SCENE_DIR="${SCENE_DIR:-${PROJECT_ROOT}/data/mip360_sparse/${SCENE}}"
@@ -40,7 +41,7 @@ if [[ ! -d "${SCENE_DIR}" ]]; then
   echo "  mkdir -p ${PROJECT_ROOT}/data/mip360_sparse" >&2
   echo "  cp -R /path/from/zip/bicycle ${PROJECT_ROOT}/data/mip360_sparse/bicycle" >&2
   echo "  # or run with the real path:" >&2
-  echo "  SCENE=bicycle SCENE_DIR=/path/from/zip/bicycle bash scripts/prepare_mip360_sparse_scene.sh" >&2
+  echo "  SCENE=bicycle SCENE_DIR=/path/from/zip/bicycle bash scripts/data_prep/prepare_mip360_sparse_scene.sh" >&2
   exit 1
 fi
 
@@ -72,7 +73,7 @@ if [[ ! -d "${SCENE_DIR}/${COLMAP_SUBDIR}" ]]; then
 fi
 if [[ ! -d "${SCENE_DIR}/depths_${DEPTH_SUP_TYPE}" ]]; then
   echo "Missing depths_${DEPTH_SUP_TYPE}/ under ${SCENE_DIR}" >&2
-  echo "Run DA2 + COLMAP align: SCENE_DIR=${SCENE_DIR} bash scripts/align_da2_mip360_colmap.sh" >&2
+  echo "Run DA2 + COLMAP align: SCENE_DIR=${SCENE_DIR} bash scripts/data_prep/align_da2_mip360_colmap.sh" >&2
   exit 1
 fi
 

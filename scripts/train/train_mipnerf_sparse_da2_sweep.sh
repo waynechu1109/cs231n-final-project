@@ -9,14 +9,14 @@
 #   PHOTO_MASK_THRESHOLD=0.14 \
 #   PHOTO_MASK_MODE=low \
 #   SWEEP_LAMBDAS="0.0 0.05 0.1 0.15" \
-#   bash scripts/train_mipnerf_sparse_da2_sweep.sh
+#   bash scripts/train/train_mipnerf_sparse_da2_sweep.sh
 #
 # KITTI sparse every-2 (default):
-#   bash scripts/train_mipnerf_sparse_da2_sweep.sh
+#   bash scripts/train/train_mipnerf_sparse_da2_sweep.sh
 #
 set -uo pipefail
 
-REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 MIPNERF_DIR="${MIPNERF_DIR:-${REPO}/outdoor-nerf-depth/nerf-methods/mipnerf360}"
 
 SCENE="${SCENE:-}"
@@ -87,7 +87,7 @@ if [[ ! -d "${MASK_DIR}" ]]; then
   echo "Generate masks first, e.g.:" >&2
   echo "  DATA_DIR=${DATA_DIR} PHOTO_MASK_THRESHOLD=${PHOTO_MASK_THRESHOLD} \\" >&2
   echo "  PHOTO_MASK_MODE=${PHOTO_MASK_MODE} SAMPLE_EVERY=${SAMPLE_EVERY} \\" >&2
-  echo "  bash scripts/generate_mipnerf_photo_masks.sh" >&2
+  echo "  bash scripts/masks/generate_mipnerf_photo_masks.sh" >&2
   exit 1
 fi
 

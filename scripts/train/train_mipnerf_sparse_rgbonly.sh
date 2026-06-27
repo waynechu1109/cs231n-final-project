@@ -2,11 +2,11 @@
 # RGB-only MipNeRF base run (lambda_depth=0) for mask generation / nomask baseline.
 #
 #   SCENE=bicycle DATA_DIR=.../mip360_sparse/bicycle SAMPLE_EVERY=1 \
-#   bash scripts/train_mipnerf_sparse_rgbonly.sh
+#   bash scripts/train/train_mipnerf_sparse_rgbonly.sh
 #
 set -euo pipefail
 
-REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 MIPNERF_DIR="${MIPNERF_DIR:-${REPO}/outdoor-nerf-depth/nerf-methods/mipnerf360}"
 MIP360_SPARSE_ROOT="${MIP360_SPARSE_ROOT:-${REPO}/data/mip360_sparse}"
 

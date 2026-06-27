@@ -26,7 +26,7 @@ No KITTI LiDAR and no `depths_gt/` folder. Alignment reference is **COLMAP** in 
 ```bash
 export PROJECT=/path/to/cs231n-final-project
 SCENE_DIR="$PROJECT/data/mip360_sparse/bicycle" \
-  bash "$PROJECT/scripts/align_da2_mip360_colmap.sh"
+  bash "$PROJECT/scripts/data_prep/align_da2_mip360_colmap.sh"
 ```
 
 Or step by step:
@@ -34,7 +34,7 @@ Or step by step:
 ```bash
 $CS231N="$HOME/miniconda3/envs/cs231n/bin/python"
 
-$CS231N "$PROJECT/scripts/export_colmap_depths.py" --scene-dir "$PROJECT/data/mip360_sparse/bicycle"
+$CS231N "$PROJECT/scripts/data_prep/export_colmap_depths.py" --scene-dir "$PROJECT/data/mip360_sparse/bicycle"
 
 $CS231N "$PROJECT/Depth-Anything-V2/align_da2_to_kitti.py" \
   --da2-npy-dir "$PROJECT/data/mip360_sparse/bicycle/depths_da2_npy" \
@@ -47,7 +47,7 @@ $CS231N "$PROJECT/Depth-Anything-V2/align_da2_to_kitti.py" \
 
 ```bash
 cd /path/to/cs231n-final-project
-SCENE=bicycle SCENE_DIR=data/mip360_sparse/bicycle bash scripts/prepare_mip360_sparse_scene.sh
+SCENE=bicycle SCENE_DIR=data/mip360_sparse/bicycle bash scripts/data_prep/prepare_mip360_sparse_scene.sh
 ```
 
 Creates:
@@ -61,13 +61,13 @@ Use **`sample_every=1`** in MipNeRF (data is already sparse on disk).
 
 ```bash
 # RGB-only base for mask generation
-SCENE=bicycle SAMPLE_EVERY=1 MAX_STEPS=50000 bash scripts/train_mipnerf_sparse_rgbonly.sh
+SCENE=bicycle SAMPLE_EVERY=1 MAX_STEPS=50000 bash scripts/train/train_mipnerf_sparse_rgbonly.sh
 
 PHOTO_MASK_THRESHOLD=0.14 PHOTO_MASK_MODE=low SAMPLE_EVERY=1 \
-  bash scripts/generate_mipnerf_photo_masks.sh
+  bash scripts/masks/generate_mipnerf_photo_masks.sh
 
 SWEEP_LAMBDAS="0.0 0.05 0.1 0.15" PHOTO_MASK_THRESHOLD=0.14 PHOTO_MASK_MODE=low \
-  SCENE=bicycle SAMPLE_EVERY=1 bash scripts/train_mipnerf_sparse_da2_sweep.sh
+  SCENE=bicycle SAMPLE_EVERY=1 bash scripts/train/train_mipnerf_sparse_da2_sweep.sh
 ```
 
 Checkpoints: `data/mip360_sparse/bicycle/logs/checkpoints_bicycle_sparse_lambda{λ}_low014_50000/`
@@ -129,23 +129,23 @@ Experiment names: `bicycle_sparse_da2_lambda{λ}_nomask_50000` or `..._low014_50
 
 ```bash
 DATASET_FAMILY=mip360 MIP360_SCENE=bicycle LAMBDA_DEPTH=0.05 \
-  bash scripts/train_splatfacto_kitti_sparse_da2.sh
+  bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 ## 6. One-shot helper
 
 ```bash
 # MipNeRF only (after prep + masks):
-bash scripts/run_bicycle_lambda_threshold_pipeline.sh
+bash scripts/train/run_bicycle_lambda_threshold_pipeline.sh
 
 # With optional steps:
-RUN_PREPARE=1 RUN_MIPNERF_RGB=1 RUN_MIPNERF_MASKS=1 bash scripts/run_bicycle_lambda_threshold_pipeline.sh
+RUN_PREPARE=1 RUN_MIPNERF_RGB=1 RUN_MIPNERF_MASKS=1 bash scripts/train/run_bicycle_lambda_threshold_pipeline.sh
 ```
 
 ## Notes
 
 - **No `depths_gt/`** — bicycle uses `depths_colmap/` (align only) and `depths_da2/` (training). MipNeRF loads `depths_da2` via `Config.depth_sup_type='da2'`; LiDAR GT is optional in the loader.
-- `prepare_mip360_sparse_scene.sh` auto-removes a stale `depths_gt` **symlink**. To remove a real directory from an old pseudo-GT export:
+- `scripts/data_prep/prepare_mip360_sparse_scene.sh` auto-removes a stale `depths_gt` **symlink**. To remove a real directory from an old pseudo-GT export:
   ```bash
   ls -la data/mip360_sparse/bicycle/depths_gt   # symlink -> depths_da2, or old PNG folder
   rm data/mip360_sparse/bicycle/depths_gt         # symlink only

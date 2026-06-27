@@ -8,11 +8,11 @@
 #   PHOTO_MASK_THRESHOLD=0.14 \
 #   PHOTO_MASK_MODE=low \
 #   SAMPLE_EVERY=1 \
-#   bash scripts/generate_mipnerf_photo_masks.sh
+#   bash scripts/masks/generate_mipnerf_photo_masks.sh
 #
 set -euo pipefail
 
-REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 MIPNERF_DIR="${MIPNERF_DIR:-${REPO}/outdoor-nerf-depth/nerf-methods/mipnerf360}"
 MIP360_SPARSE_ROOT="${MIP360_SPARSE_ROOT:-${REPO}/data/mip360_sparse}"
 

@@ -324,7 +324,7 @@ def train(
     if not os.path.exists(f"{data_dir}/transforms.json"):
         print(f"Building depth dataset: {data_dir} ({dataset_family})")
         make_cmd = [
-            "python", "/opt/project_scripts/make_nerfstudio_kitti_depth.py",
+            "python", "/opt/project_scripts/data_prep/make_nerfstudio_kitti_depth.py",
             "--src", nerfstudio_src,
             "--dst", data_dir,
             "--depth-dir", depth_dir,
@@ -345,7 +345,7 @@ def train(
     if os.path.exists(f"{da2_shared}/transforms.json"):
         subprocess.run(
             [
-                "python", "/opt/project_scripts/attach_nerfstudio_photo_masks.py",
+                "python", "/opt/project_scripts/masks/attach_nerfstudio_photo_masks.py",
                 "--data-dir", da2_shared,
                 "--strip-only",
             ],
@@ -364,7 +364,7 @@ def train(
         print(f"Attaching photometric masks from: {photo_mask_dir}")
         subprocess.run(
             [
-                "python", "/opt/project_scripts/attach_nerfstudio_photo_masks.py",
+                "python", "/opt/project_scripts/masks/attach_nerfstudio_photo_masks.py",
                 "--data-dir", data_dir,
                 "--mask-dir", photo_mask_dir,
                 "--overwrite",
@@ -562,7 +562,7 @@ def generate_masks(
     data_dir = f"{DATA_MOUNT}/nerfstudio/{data_dir_name}"
 
     cmd = [
-        "python", "/opt/project_scripts/generate_splatfacto_photo_masks.py",
+        "python", "/opt/project_scripts/masks/generate_splatfacto_photo_masks.py",
         "--load-config", config_path,
         "--output-dir", mask_dir,
         "--threshold", str(threshold),
@@ -911,7 +911,7 @@ def generate_matched_masks(
     mask_dir = f"{DATA_MOUNT}/masks/{base_exp_name}_{mask_label}"
 
     cmd = [
-        "python", "/opt/project_scripts/generate_matched_ratio_masks.py",
+        "python", "/opt/project_scripts/masks/generate_matched_ratio_masks.py",
         "--load-config", config_path,
         "--output-dir", mask_dir,
         "--mode", mode,
@@ -1089,14 +1089,14 @@ def prepare_kitti_seq(
     # must not reuse a stale transforms.json that may have wrong w/h.
     print(f"[Step 1] Generating transforms.json for {slug}...")
     subprocess.run([
-        "python", "/opt/project_scripts/colmap_to_nerfstudio_transforms.py",
+        "python", "/opt/project_scripts/data_prep/colmap_to_nerfstudio_transforms.py",
         "--output-dir", seq_dir,
     ], check=True)
 
     # Add train/val/test splits and set up the nerfstudio directory.
     # --overwrite removes any stale destination before recreating.
     subprocess.run([
-        "python", "/opt/project_scripts/make_nerfstudio_kitti_sparse.py",
+        "python", "/opt/project_scripts/data_prep/make_nerfstudio_kitti_sparse.py",
         "--src", seq_dir,
         "--dst", nerfstudio_dst,
         "--images", img_dir,

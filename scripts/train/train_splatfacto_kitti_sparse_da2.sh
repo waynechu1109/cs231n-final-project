@@ -8,21 +8,22 @@ export TORCHDYNAMO_DISABLE=1
 # Default: KITTI seq02 / drive 0034. For another sequence, set KITTI_SEQ_DIR (paths are derived
 # automatically unless you override NERFSTUDIO_SRC / DATA_DIR):
 #
-#   KITTI_SEQ_DIR=/path/to/KITTISeq05_..._densegt bash scripts/train_splatfacto_kitti_sparse_da2.sh
+#   KITTI_SEQ_DIR=/path/to/KITTISeq05_..._densegt bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 #
 # Prerequisites (seq05 is not prebuilt in this repo):
 #   1. Dense nerfstudio: data/nerfstudio/kitti_seq05_0018/transforms.json
-#   2. Sparse nerfstudio: data/nerfstudio/kitti_seq05_0018_sparse_every2 (see scripts/make_nerfstudio_kitti_sparse.py)
+#   2. Sparse nerfstudio: data/nerfstudio/kitti_seq05_0018_sparse_every2 (see scripts/data_prep/make_nerfstudio_kitti_sparse.py)
 #   3. Depth maps: ${KITTI_SEQ_DIR}/depths_da2 (see docs/depth-anything-v2.md)
 #
 # Optional photometric masked depth:
 #   1) Train once without masks (default below).
-#   2) bash scripts/generate_splatfacto_photo_masks.py --load-config <config.yml> --output-dir <masks>
-#   3) PHOTO_MASK_DIR=<masks> bash scripts/train_splatfacto_kitti_sparse_da2.sh
+#   2) python scripts/masks/generate_splatfacto_photo_masks.py --load-config <config.yml> --output-dir <masks>
+#   3) PHOTO_MASK_DIR=<masks> bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 NERFSTUDIO_DIR="${PROJECT_ROOT}/nerfstudio"
 
 DATASET_FAMILY="${DATASET_FAMILY:-kitti}"
@@ -93,7 +94,7 @@ if [[ ! -f "${NERFSTUDIO_SRC}/transforms.json" ]]; then
   else
     echo "Create the sparse dataset with:" >&2
     echo "  cd ${PROJECT_ROOT}" >&2
-    echo "  python scripts/make_nerfstudio_kitti_sparse.py \\" >&2
+    echo "  python scripts/data_prep/make_nerfstudio_kitti_sparse.py \\" >&2
     echo "    --src ${DENSE_NERFSTUDIO} \\" >&2
     echo "    --dst ${NERFSTUDIO_SRC} \\" >&2
     echo "    --images ${KITTI_SEQ_DIR}/images \\" >&2
@@ -115,7 +116,7 @@ echo "Depth supervision:  ${DEPTH_DIR}"
 echo "Experiment name:    ${EXP_NAME}"
 
 if [[ ! -f "${DATA_DIR}/transforms.json" ]]; then
-  python "${SCRIPT_DIR}/make_nerfstudio_kitti_depth.py" \
+  python "${SCRIPTS_ROOT}/data_prep/make_nerfstudio_kitti_depth.py" \
     --src "${NERFSTUDIO_SRC}" \
     --dst "${DATA_DIR}" \
     --depth-dir "${DEPTH_DIR}" \
@@ -128,7 +129,7 @@ if [[ -n "${PHOTO_MASK_DIR}" ]]; then
     echo "Missing PHOTO_MASK_DIR: ${PHOTO_MASK_DIR}" >&2
     exit 1
   fi
-  python "${SCRIPT_DIR}/attach_nerfstudio_photo_masks.py" \
+  python "${SCRIPTS_ROOT}/masks/attach_nerfstudio_photo_masks.py" \
     --data-dir "${DATA_DIR}" \
     --mask-dir "${PHOTO_MASK_DIR}" \
     --overwrite

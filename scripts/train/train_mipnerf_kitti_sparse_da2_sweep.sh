@@ -11,10 +11,10 @@
 #     PHOTO_MASK_MODE / PHOTO_MASK_THRESHOLD combination below must already have masks.
 #
 # Quick start (defaults: lambda in {0.05, 0.1, 0.15} on seq02, low/0.14 masks):
-#   bash scripts/train_mipnerf_kitti_sparse_da2_sweep.sh
+#   bash scripts/train/train_mipnerf_kitti_sparse_da2_sweep.sh
 #
 # Override the swept values without editing the file:
-#   SWEEP_LAMBDAS="0.0 0.05 0.1 0.2" bash scripts/train_mipnerf_kitti_sparse_da2_sweep.sh
+#   SWEEP_LAMBDAS="0.0 0.05 0.1 0.2" bash scripts/train/train_mipnerf_kitti_sparse_da2_sweep.sh
 #
 # Other pass-through env vars: DEPTH_SUP_TYPE, DEPTH_LOSS_TYPE, DEPTH_KEEP_RATIO,
 # SAMPLE_EVERY, MAX_STEPS, CHECKPOINT_EVERY, BATCH_SIZE, KITTI_DIR_NAME,

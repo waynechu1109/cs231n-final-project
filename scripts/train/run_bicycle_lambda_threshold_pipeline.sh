@@ -4,21 +4,22 @@
 # Prereqs on GPU machine:
 #   1. Place Kaggle sparse bicycle under data/mip360_sparse/bicycle
 #      (images/, sparse/0/, depths_colmap/, depths_da2/ — no depths_gt/)
-#   2. bash scripts/align_da2_mip360_colmap.sh   # if depths_da2/ not built yet
-#   3. bash scripts/prepare_mip360_sparse_scene.sh
-#   4. bash scripts/train_mipnerf_sparse_rgbonly.sh   # for MipNeRF masks
-#   5. bash scripts/generate_mipnerf_photo_masks.sh
+#   2. bash scripts/data_prep/align_da2_mip360_colmap.sh   # if depths_da2/ not built yet
+#   3. bash scripts/data_prep/prepare_mip360_sparse_scene.sh
+#   4. bash scripts/train/train_mipnerf_sparse_rgbonly.sh   # for MipNeRF masks
+#   5. bash scripts/masks/generate_mipnerf_photo_masks.sh
 #
 # Local splatfacto (sequential):
-#   RUN_SPLATFACTO=1 bash scripts/run_bicycle_lambda_threshold_pipeline.sh
+#   RUN_SPLATFACTO=1 bash scripts/train/run_bicycle_lambda_threshold_pipeline.sh
 #
 # Modal splatfacto (parallel, after volume upload — see docs/mip360-bicycle-sparse.md):
-#   RUN_MODAL=1 bash scripts/run_bicycle_lambda_threshold_pipeline.sh
+#   RUN_MODAL=1 bash scripts/train/run_bicycle_lambda_threshold_pipeline.sh
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 
 export SCENE=bicycle
 export DATA_DIR="${DATA_DIR:-${PROJECT_ROOT}/data/mip360_sparse/bicycle}"
@@ -36,7 +37,7 @@ echo "Lambdas: ${SWEEP_LAMBDAS}"
 echo "Mask: ${PHOTO_MASK_MODE} @ ${PHOTO_MASK_THRESHOLD}"
 
 if [[ "${RUN_PREPARE:-0}" == 1 ]]; then
-  bash "${SCRIPT_DIR}/prepare_mip360_sparse_scene.sh"
+  bash "${SCRIPTS_ROOT}/data_prep/prepare_mip360_sparse_scene.sh"
 fi
 
 if [[ "${RUN_MIPNERF_RGB:-0}" == 1 ]]; then
@@ -44,7 +45,7 @@ if [[ "${RUN_MIPNERF_RGB:-0}" == 1 ]]; then
 fi
 
 if [[ "${RUN_MIPNERF_MASKS:-0}" == 1 ]]; then
-  bash "${SCRIPT_DIR}/generate_mipnerf_photo_masks.sh"
+  bash "${SCRIPTS_ROOT}/masks/generate_mipnerf_photo_masks.sh"
 fi
 
 if [[ "${RUN_MIPNERF_SWEEP:-1}" == 1 ]]; then

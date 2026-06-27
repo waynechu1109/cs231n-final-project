@@ -37,7 +37,7 @@ The script below creates a nerfstudio dataset variant with `depth_file_path` ent
 ```bash
 cd /home/ubuntu/final_project
 
-python scripts/make_nerfstudio_kitti_depth.py \
+python scripts/data_prep/make_nerfstudio_kitti_depth.py \
   --src data/nerfstudio/kitti_seq02_0034 \
   --dst data/nerfstudio/kitti_seq02_0034_da2 \
   --depth-dir data/kitti/kitti_select_static_5seq/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_da2 \
@@ -59,7 +59,7 @@ data/nerfstudio/kitti_seq02_0034_da2/
 ```bash
 cd /home/ubuntu/final_project
 
-python scripts/make_nerfstudio_kitti_depth.py \
+python scripts/data_prep/make_nerfstudio_kitti_depth.py \
   --src data/nerfstudio/kitti_seq02_0034_sparse_every2 \
   --dst data/nerfstudio/kitti_seq02_0034_sparse_every2_da2 \
   --depth-dir data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_da2 \
@@ -80,7 +80,7 @@ Depth PNGs use the same KITTI encoding as MipNeRF (`depth_m = uint16 / 256`, `0`
 
 ```bash
 cd /home/ubuntu/final_project
-bash scripts/train_splatfacto_kitti_da2.sh
+bash scripts/train/train_splatfacto_kitti_da2.sh
 ```
 
 Equivalent manual command:
@@ -100,7 +100,7 @@ ns-train splatfacto-da2 \
 
 ```bash
 cd /home/ubuntu/final_project
-bash scripts/train_splatfacto_kitti_sparse_da2.sh
+bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 Equivalent manual command:
@@ -133,7 +133,7 @@ These mirror the MipNeRF-360 KITTI DA2 run in [depth-anything-v2.md](depth-anyth
 Override at launch time:
 
 ```bash
-LAMBDA_DEPTH=0.05 DEPTH_LOSS_TYPE=mse bash scripts/train_splatfacto_kitti_sparse_da2.sh
+LAMBDA_DEPTH=0.05 DEPTH_LOSS_TYPE=mse bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 ## Evaluate and Export
@@ -169,7 +169,7 @@ MipNeRF-360 can gate depth supervision with fixed photometric-error masks (`gene
 conda activate nerfstudio
 cd /home/ubuntu/final_project
 
-python scripts/generate_splatfacto_photo_masks.py \
+python scripts/masks/generate_splatfacto_photo_masks.py \
   --load-config nerfstudio/outputs/<exp>/splatfacto-da2/<timestamp>/config.yml \
   --output-dir data/kitti/.../photo_masks_splat_high \
   --threshold 0.12 \
@@ -181,14 +181,14 @@ python scripts/generate_splatfacto_photo_masks.py \
 ```bash
 PHOTO_MASK_DIR=data/kitti/.../photo_masks_splat_high \
 PHOTO_MASK_MODE=high \
-bash scripts/train_splatfacto_kitti_sparse_da2.sh
+bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 You can reuse **MipNeRF mask PNGs** directly if filenames match the KITTI frame names in `transforms.json`:
 
 ```bash
 PHOTO_MASK_DIR=/path/to/mipnerf/fixed_photo_masks \
-bash scripts/train_splatfacto_kitti_sparse_da2.sh
+bash scripts/train/train_splatfacto_kitti_sparse_da2.sh
 ```
 
 | Setting | MipNeRF | Splatfacto |

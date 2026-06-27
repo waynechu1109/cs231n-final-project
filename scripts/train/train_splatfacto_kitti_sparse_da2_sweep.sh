@@ -3,27 +3,28 @@
 export MAX_JOBS=1
 export TORCHDYNAMO_DISABLE=1
 
-# Sweep wrapper around scripts/train_splatfacto_kitti_sparse_da2.sh.
+# Sweep wrapper around scripts/train/train_splatfacto_kitti_sparse_da2.sh.
 #
 # Runs the splatfacto-da2 training once per swept value. Each run gets a distinct
 # experiment name (the base script encodes LAMBDA_DEPTH into EXP_NAME), so results
 # land in separate outputs/ folders, and each run is also logged separately.
 #
 # Quick start (uses the LAMBDAS below = 0.1 0.15):
-#   bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
+#   bash scripts/train/train_splatfacto_kitti_sparse_da2_sweep.sh
 #
 # Override the swept values without editing this file:
-#   SWEEP_LAMBDAS="0.05 0.1 0.15 0.2" bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
+#   SWEEP_LAMBDAS="0.05 0.1 0.15 0.2" bash scripts/train/train_splatfacto_kitti_sparse_da2_sweep.sh
 #
 # Other knobs pass straight through to the base script via env vars, e.g.:
-#   DEPTH_LOSS_TYPE=l1 MAX_NUM_ITERATIONS=30000 bash scripts/train_splatfacto_kitti_sparse_da2_sweep.sh
+#   DEPTH_LOSS_TYPE=l1 MAX_NUM_ITERATIONS=30000 bash scripts/train/train_splatfacto_kitti_sparse_da2_sweep.sh
 #
 # Note: pipefail is on but set -e is intentionally off, so one failed run does not
 # abort the whole sweep; failures are collected and reported in the final summary.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 BASE_SCRIPT="${SCRIPT_DIR}/train_splatfacto_kitti_sparse_da2.sh"
 
 # ----------------------- sweep configuration -----------------------

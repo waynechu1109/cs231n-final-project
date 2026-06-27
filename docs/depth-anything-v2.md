@@ -122,7 +122,7 @@ data/mip360_sparse/bicycle/
 One-shot align (from repo root):
 
 ```bash
-SCENE_DIR=data/mip360_sparse/bicycle bash scripts/align_da2_mip360_colmap.sh
+SCENE_DIR=data/mip360_sparse/bicycle bash scripts/data_prep/align_da2_mip360_colmap.sh
 ```
 
 Or manually with `--ref-depth-dir` (not `--gt-depth-dir`):
@@ -135,7 +135,7 @@ python align_da2_to_kitti.py \
   --max-depth 80
 ```
 
-Then prep nerfstudio splits: `SCENE=bicycle bash scripts/prepare_mip360_sparse_scene.sh`
+Then prep nerfstudio splits: `SCENE=bicycle bash scripts/data_prep/prepare_mip360_sparse_scene.sh`
 
 Full pipeline: [mip360-bicycle-sparse.md](mip360-bicycle-sparse.md)
 

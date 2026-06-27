@@ -6,12 +6,13 @@
 # Prereq: depths_da2_npy/ from run_da2_save_npy.py
 #
 # Usage:
-#   SCENE_DIR=data/mip360_sparse/bicycle bash scripts/align_da2_mip360_colmap.sh
+#   SCENE_DIR=data/mip360_sparse/bicycle bash scripts/data_prep/align_da2_mip360_colmap.sh
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPTS_ROOT}/.." && pwd)"
 
 SCENE_DIR="${SCENE_DIR:-${PROJECT_ROOT}/data/mip360_sparse/bicycle}"
 PYTHON="${PYTHON:-${HOME}/miniconda3/envs/cs231n/bin/python}"
