@@ -4,6 +4,7 @@
 Wayne Chu · Yashasvini Gopalan · Changju Yuan
 
 <div class="links">
+  <a href="https://waynechu1109.github.io/cs231n-final-project/"><img src="https://img.shields.io/badge/Project_Page-blue" alt="Project Page">
   <a href="https://waynechu1109.github.io/paper/cs231n_paper.pdf"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b" alt="Paper"></a>
   <a href="https://waynechu1109.github.io/slides/cs231n_poster.pdf"><img src="https://img.shields.io/badge/Poster-PDF-1f6feb" alt="Poster"></a>
 </div>
@@ -33,11 +34,7 @@ This project focuses on **photometric-masked monocular depth supervision** for s
 
 ### Monocular Depth Prior Alignment
 
-DA-V2 predicts relative depth. We align each prediction to metric depth via per-image least-squares scale-shift fitting:
-
-$$
-s^{*}, t^{*} = \operatorname*{arg\,min}_{s,t} \sum_{u \in \Omega} \left( s\, d_m(u) + t - d_r(u) \right)^2
-$$
+DA-V2 predicts relative depth. We align each prediction to metric depth via per-image least-squares scale-shift fitting — solving for the scale *s* and shift *t* that best match the predicted depth *d_m* to the reference depth *d_r* over valid anchor pixels.
 
 For KITTI, reference depth comes from projected LiDAR points. For Mip-NeRF-360 Bicycle, sparse COLMAP points are used. Aligned depth is clipped to 80 m for KITTI.
 
