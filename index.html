@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Reliability-Aware Monocular Depth Supervision for Sparse-View Neural Reconstruction</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #222;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      padding: 40px 20px;
+    }
+    h1, h2, h3 {
+      font-weight: 600;
+    }
+    h1 {
+      font-size: 32px;
+      text-align: center;
+    }
+    h2 {
+      margin-top: 50px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+    }
+    .authors {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+    .authors a {
+      color: rgb(54, 171, 238);
+      text-decoration: none;
+    }
+    .authors a:hover {
+      text-decoration: underline;
+    }
+    .affiliation {
+      text-align: center;
+      font-size: 14px;
+      color: #666;
+    }
+    .venue {
+      text-align: center;
+      font-size: 14px;
+      color: #888;
+      margin-top: 6px;
+    }
+    .links {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .links a {
+      margin: 0 6px;
+      text-decoration: none;
+    }
+    .figure {
+      text-align: center;
+      margin: 30px 0;
+    }
+    .figure img {
+      max-width: 100%;
+      border-radius: 8px;
+    }
+    .caption {
+      font-size: 14px;
+      color: #555;
+      margin-top: 8px;
+    }
+    .eq {
+      text-align: center;
+      font-size: 17px;
+      margin: 20px 0;
+    }
+    .eq sub, .eq sup { font-size: .72em; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+      margin: 16px 0;
+    }
+    th, td {
+      padding: 8px 10px;
+      text-align: right;
+      border-bottom: 1px solid #eee;
+    }
+    th:first-child, td:first-child { text-align: left; }
+    thead th { border-bottom: 1px solid #ccc; color: #555; font-weight: 600; }
+    tr.highlight td { background: #f3f8fd; font-weight: 600; }
+    pre {
+      background: #f6f8fa;
+      padding: 15px;
+      overflow-x: auto;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    #post-footer {
+      text-align: center;
+      padding: 24px 0 40px;
+    }
+  </style>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>Reliability-Aware Monocular Depth Supervision for Sparse-View Neural Reconstruction</h1>
+
+<div class="authors">
+<a href="https://www.linkedin.com/in/waynechu1109">Wei-Teng (Wayne) Chu</a><sup>*</sup> ·
+<a href="https://www.linkedin.com/in/yashasvinigopalan/">Yashasvini Gopalan</a><sup>*</sup> ·
+Changju Yuan<sup>*</sup>
+</div>
+
+<div class="affiliation">
+Stanford University &nbsp;·&nbsp; <sup>*</sup>Equal contribution
+</div>
+<div class="venue">CS231N: Deep Learning for Computer Vision — Final Project</div>
+
+<div class="links">
+  <a href="https://waynechu1109.github.io/paper/cs231n_paper.pdf"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b" alt="Paper PDF"></a>
+  <a href="https://waynechu1109.github.io/slides/cs231n_poster.pdf"><img src="https://img.shields.io/badge/Poster-PDF-1f6feb" alt="Poster PDF"></a>
+  <a href="https://github.com/waynechu1109/cs231n-final-project"><img src="https://img.shields.io/badge/github-cs231n--final--project-blue?logo=github" alt="GitHub"></a>
+</div>
+
+<div class="figure">
+  <img src="media/pull_fig.png" alt="Teaser / pipeline overview">
+
+  <div class="caption">
+    Given sparse forward-facing RGB inputs, we estimate a monocular depth prior with Depth Anything V2 and align it
+    to metric depth via scale-shift fitting. An RGB-only baseline yields per-pixel photometric error, which builds a
+    reliability mask that keeps low-error regions. The aligned prior is applied only to reliable pixels through a
+    masked depth loss while the model is jointly optimized with the photometric loss.
+  </div>
+</div>
+
+<h2>Abstract</h2>
+
+<p>
+Sparse-view neural reconstruction is challenging in outdoor driving scenes, where cameras move along a narrow
+forward-facing trajectory and provide limited multi-view overlap. Although monocular depth estimators can provide
+dense geometric priors, their predictions are noisy and not uniformly reliable across image regions. In this work,
+we study monocular depth supervision for sparse-view neural reconstruction. We use <b>Depth Anything V2 (DA-V2)</b>
+as a dense monocular depth prior, align its predictions to metric depth using scale-shift fitting, and apply depth
+supervision <i>selectively</i> through photometric masks generated from an RGB-only baseline model. We evaluate this
+strategy on two representative scene representations: <b>Mip-NeRF-360</b> and <b>Splatfacto</b>. On KITTISeq02 under
+an every-2 sparse-view setting, masked depth supervision gives only marginal gains for Mip-NeRF-360, while Splatfacto
+benefits more clearly, improving PSNR from 14.903 to 15.932 and reducing RMSE from 0.542 to 0.100. Matched-ratio mask
+ablations and additional KITTISeq05 experiments show that the gains come from selecting reliable low-error regions
+rather than simply reducing the number of depth-supervised pixels. Overall, monocular depth priors are useful for
+under-constrained sparse-view reconstruction, but should be applied selectively and with moderate weighting.
+</p>
+
+<h2>Method</h2>
+
+<h3>Scale-Aligned Monocular Depth Prior</h3>
+<p>
+DA-V2 predicts relative depth, so we align each prediction to a metric reference before training. For KITTI the
+reference is valid LiDAR depth; for the Bicycle scene it is sparse COLMAP points. Given a monocular prediction
+\(d_m(u)\) and reference depth \(d_r(u)\) over valid anchor pixels \(u \in \Omega\), we solve a per-image
+least-squares scale-shift fit:
+</p>
+<div class="eq">
+  \[
+    s^{*},\, t^{*} = \operatorname*{arg\,min}_{s,t} \sum_{u \in \Omega} \big( s\, d_m(u) + t - d_r(u) \big)^2
+  \]
+</div>
+<p>
+The aligned prior is \(\hat{d}(u) = s^{*} d_m(u) + t^{*}\), clipped to the 80 m evaluation range on KITTI.
+</p>
+
+<h3>Photometric Reliability Mask</h3>
+<p>
+Rather than supervising every pixel, we only supervise where the RGB-only baseline is already reliable. From a
+baseline render \(\hat{I}\) and the ground-truth image \(I\), we compute a per-pixel photometric error and
+threshold it at \(\tau\):
+</p>
+<div class="eq">
+  \[
+    e(u) = \frac{1}{3} \sum_{c \in \{R,G,B\}} \big| \hat{I}_c(u) - I_c(u) \big|,
+    \qquad M_\tau(u) = \mathbb{1}\!\left[\, e(u) < \tau \,\right]
+  \]
+</div>
+<p>
+High photometric error flags unreliable regions — dynamic objects, reflective surfaces, occlusion boundaries, and
+sky — where a depth loss would push the model toward wrong geometry. Low-error pixels are already consistent with
+the RGB observations, so the aligned prior acts as a stabilizing regularizer. The mask is computed once from the
+RGB-only baseline and held fixed throughout depth-supervised training.
+</p>
+
+<h3>Masked Depth Supervision Objective</h3>
+<p>
+The effective supervision mask combines the photometric mask with the depth-validity mask \(D(u)\):
+\(M_\text{eff} = M_\tau \wedge D\). The depth loss is gated by \(M_\text{eff}\), while the RGB loss is evaluated
+over the full image:
+</p>
+<div class="eq">
+  \[
+    \mathcal{L} = \mathcal{L}_\text{rgb} + \lambda_\text{depth}\, \mathcal{L}_\text{depth},
+    \qquad
+    \mathcal{L}_\text{depth} = \frac{1}{N} \sum_{u} M_\text{eff}(u) \big( \hat{d}(u) - \hat{d}_\text{prior}(u) \big)^2
+  \]
+</div>
+
+<div class="figure">
+  <img src="media/data_prep.png" alt="Dataset and mask-generation pipeline">
+
+  <div class="caption">
+    Training views are subsampled from KITTI Odometry to simulate sparse-view capture. Fixed photometric masks are
+    generated from baseline renderings by thresholding the photometric error; DA-V2 predictions are scale-shift
+    aligned to produce metric depth priors.
+  </div>
+</div>
+
+<h2>Results</h2>
+
+<h3>Splatfacto — KITTISeq02 every-2</h3>
+<p>
+Splatfacto gains clearly from masked depth supervision. The best rendering quality is at &tau;=0.18, &lambda;=0.10
+(<b>+1.03 dB PSNR</b>, RMSE down from 0.542 to 0.100). Increasing &lambda; to 0.15 improves RMSE further but trades
+away PSNR — a geometry–photometry tradeoff.
+</p>
+<table>
+  <thead>
+    <tr><th>Setting (&tau;, &lambda;)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>RGB-only</td><td>14.903</td><td>0.433</td><td>0.446</td><td>0.542</td></tr>
+    <tr><td>0.16, 0.10</td><td>15.452</td><td>0.454</td><td>0.434</td><td>0.106</td></tr>
+    <tr class="highlight"><td>0.18, 0.10 (ours)</td><td>15.932</td><td>0.477</td><td>0.408</td><td>0.100</td></tr>
+    <tr><td>0.18, 0.15</td><td>15.588</td><td>0.459</td><td>0.436</td><td>0.096</td></tr>
+    <tr><td>1.00, 0.10</td><td>15.494</td><td>0.448</td><td>0.434</td><td>0.101</td></tr>
+  </tbody>
+</table>
+
+<h3>Matched-Ratio Mask Ablation</h3>
+<p>
+To test whether the benefit comes from <i>selecting reliable pixels</i> or simply <i>using fewer pixels</i>, we
+compare against high-error and random masks with the identical per-frame pixel budget. The low-error mask wins on
+every metric — the improvement is not from fewer supervised pixels.
+</p>
+<table>
+  <thead>
+    <tr><th>Mask type (&lambda;=0.10)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>High-error, matched</td><td>14.932</td><td>0.437</td><td>0.455</td><td>0.111</td></tr>
+    <tr><td>Random, matched (3 seeds)</td><td>15.036</td><td>0.442</td><td>0.456</td><td>0.109</td></tr>
+    <tr class="highlight"><td>Low-error, &tau;=0.18 (ours)</td><td>15.932</td><td>0.477</td><td>0.408</td><td>0.100</td></tr>
+  </tbody>
+</table>
+
+<div class="figure">
+  <img src="media/splatfacto_grid.png" alt="Splatfacto lambda by tau qualitative ablation grid">
+
+  <div class="caption">
+    Effect of depth-loss weight &lambda; and reliability threshold &tau; on Splatfacto. Depth supervision improves
+    geometric consistency and the reconstruction of thin structures, with fewer smeared artifacts around object
+    boundaries and foreground vehicles.
+  </div>
+</div>
+
+<h3>Mip-NeRF-360 — KITTISeq02 every-2</h3>
+<p>
+The implicit density field is far more sensitive to noisy monocular depth. Masked supervision yields only marginal
+PSNR gains (best +0.23 dB) and does not improve geometry; SSIM, LPIPS, and RMSE slightly degrade.
+</p>
+<table>
+  <thead>
+    <tr><th>Setting (&tau;, &lambda;)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>RGB-only</td><td>20.378</td><td>0.601</td><td>0.409</td><td>2.703</td></tr>
+    <tr><td>0.18, 0.10</td><td>20.384</td><td>0.594</td><td>0.416</td><td>3.532</td></tr>
+    <tr class="highlight"><td>1.00, 0.15</td><td>20.607</td><td>0.595</td><td>0.412</td><td>3.580</td></tr>
+  </tbody>
+</table>
+
+<div class="figure">
+  <img src="media/mipnerf_grid.png" alt="Mip-NeRF-360 lambda by tau qualitative ablation grid">
+
+  <div class="caption">
+    Effect of depth-loss weight &lambda; and reliability threshold &tau; on Mip-NeRF-360 reconstruction of finer
+    details such as the street pole. Masked depth supervision provides only weak, unstable regularization for the
+    implicit density field.
+  </div>
+</div>
+
+<div class="figure">
+  <img src="media/psnr_lambda.png" alt="PSNR versus depth-loss weight lambda">
+
+  <div class="caption">
+    PSNR as a function of &lambda; on KITTISeq02 across six thresholds &tau;. Splatfacto peaks sharply at
+    &tau;=0.18, &lambda;=0.10 (15.93 dB); Mip-NeRF-360 rises only gently with &lambda;.
+  </div>
+</div>
+
+<h2>Object-Centric Bicycle</h2>
+<p>
+When multi-view coverage is already strong, the story flips. On the Mip-NeRF-360 Bicycle scene, RGB-only Splatfacto
+gives the best rendering quality, while depth supervision consistently lowers RMSE (1.479 &rarr; 0.722) at the cost
+of PSNR / SSIM / LPIPS — depth regularization over-constrains an already well-posed reconstruction.
+</p>
+
+<div class="figure">
+  <img src="media/bicycle_grid.png" alt="Bicycle lambda by tau qualitative ablation grid">
+
+  <div class="caption">
+    Ablation of &lambda; and &tau; for object-centric Splatfacto reconstruction. Depth supervision improves RMSE but
+    generally reduces RGB rendering quality when multi-view coverage is already strong.
+  </div>
+</div>
+
+<h2>Takeaways</h2>
+<p>
+Monocular depth priors are most useful for <b>explicit Gaussian representations</b> in under-constrained,
+forward-facing sparse-view scenes, and less reliable for implicit NeRF-style density fields. A moderate depth weight
+on a low-error reliability mask improves both rendering and geometry for Splatfacto, while too-strong supervision
+sacrifices RGB quality for depth metrics. Future work: better scale alignment, uncertainty-aware masks, and adaptive
+depth-loss weighting.
+</p>
+
+<!-- <h2>BibTeX</h2>
+
+<pre>
+@misc{chu2026reliability,
+    title  = {Reliability-Aware Monocular Depth Supervision for Sparse-View Neural Reconstruction},
+    author = {Wei-Teng Chu and Yashasvini Gopalan and Changju Yuan},
+    year   = {2026},
+    note   = {CS231N Final Project, Stanford University},
+    url    = {https://github.com/waynechu1109/cs231n-final-project}
+}
+</pre> -->
+
+<h2>Acknowledgements</h2>
+<p>
+This project builds on
+<a href="https://github.com/DepthAnything/Depth-Anything-V2">Depth Anything V2</a>,
+<a href="https://jonbarron.info/mipnerf360/">Mip-NeRF 360</a>,
+<a href="https://docs.nerf.studio/">Nerfstudio / Splatfacto</a>, and
+<a href="https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/">3D Gaussian Splatting</a>.
+</p>
+
+</div>
+
+</body>
+</html>

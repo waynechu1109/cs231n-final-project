@@ -35,7 +35,9 @@ This project focuses on **photometric-masked monocular depth supervision** for s
 
 DA-V2 predicts relative depth. We align each prediction to metric depth via per-image least-squares scale-shift fitting:
 
-$$s^{*}, t^{*} = \arg\min_{s,t} \sum_{u \in \Omega} \left(s\, d_m(u) + t - d_r(u)\right)^{2}$$
+$$
+s^{*}, t^{*} = \operatorname*{arg\,min}_{s,t} \sum_{u \in \Omega} \left( s\, d_m(u) + t - d_r(u) \right)^2
+$$
 
 For KITTI, reference depth comes from projected LiDAR points. For Mip-NeRF-360 Bicycle, sparse COLMAP points are used. Aligned depth is clipped to 80 m for KITTI.
 
