@@ -5,7 +5,7 @@ Wayne Chu · Yashasvini Gopalan · Changju Yuan
 
 <div class="links">
   <a href="https://waynechu1109.github.io/cs231n-final-project/"><img src="https://img.shields.io/badge/Project_Page-blue" alt="Project Page">
-  <a href="https://arxiv.org/abs/2607.02554v1"><img src="https://img.shields.io/badge/Paper-PDF-b31b1b" alt="Paper"></a>
+  <a href="https://arxiv.org/abs/2607.02554v1"><img src="https://img.shields.io/badge/arXiv-2607.02554-b31b1b?logo=arxiv" alt="arXiv"></a>
   <a href="https://waynechu1109.github.io/slides/cs231n_poster.pdf"><img src="https://img.shields.io/badge/Poster-PDF-1f6feb" alt="Poster"></a>
 </div>
 
