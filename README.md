@@ -502,6 +502,24 @@ Average scale-shift alignment error on KITTI LiDAR: **4.22 m**. DA-V2 is most re
 
 ---
 
+## Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@misc{chu2026reliability,
+    title         = {Reliability-Aware Monocular Depth Supervision for Sparse-View Neural Reconstruction},
+    author        = {Wei-Teng Chu and Yashasvini Gopalan and Changju Yuan},
+    year          = {2026},
+    eprint        = {2607.02554},
+    archivePrefix = {arXiv},
+    primaryClass  = {cs.CV},
+    url           = {https://arxiv.org/abs/2607.02554}
+}
+```
+
+---
+
 ## Documentation
 
 | Topic | File |
