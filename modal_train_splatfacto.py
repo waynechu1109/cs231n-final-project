@@ -287,6 +287,7 @@ def train(
     dataset_family: str = "kitti",
     mip360_scene: str = "bicycle",
     mask_label: str = "",
+    seed: int = 0,
 ):
     import os
     import shutil
@@ -297,12 +298,16 @@ def train(
     )
     depth_dir = f"{seq_dir}/depths_{depth_sup_type}"
 
+    effective_mask_label = mask_label
+    if seed > 0:
+        base_label = mask_label or ("nomask" if not (photo_mask_dir or False) else "")
+        effective_mask_label = f"{base_label}_seed{seed}" if base_label else f"seed{seed}"
     exp_name = _experiment_name(
         slug, sparse_tag, depth_sup_type, lambda_depth, max_num_iterations,
         photo_mask_dir=photo_mask_dir,
         photo_mask_mode=photo_mask_mode,
         photo_mask_threshold=photo_mask_threshold,
-        mask_label=mask_label,
+        mask_label=effective_mask_label,
     )
 
     # ---- sanity checks -------------------------------------------------
@@ -388,6 +393,7 @@ def train(
         "--pipeline.model.lambda-depth", str(lambda_depth),
         "--pipeline.model.depth-loss-type", depth_loss_type,
         "--pipeline.model.photo-mask-mode", photo_mask_mode,
+        "--machine.seed", str(seed),
         "--vis", "tensorboard",
     ]
     # Dataparser flags use the nerfstudio-data subcommand (not --pipeline.datamanager...).
@@ -441,6 +447,55 @@ def main(
         dataset_family=dataset_family,
         mip360_scene=mip360_scene,
     )
+
+
+# ---------------------------------------------------------------------------
+# run_headline_seeds — rerun the headline Splatfacto setting (τ=0.18, λ=0.10)
+# with additional seeds for variance estimation.  Seed 0 (the original run)
+# already exists; this launches seeds 1 and 2 in parallel.
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::run_headline_seeds
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_headline_seeds(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.1,
+    photo_mask_threshold: float = 0.18,
+    max_num_iterations: int = 50000,
+    seeds: str = "1,2",
+):
+    """Run the headline Splatfacto setting over extra seeds in parallel.
+
+    The τ=0.18, λ=0.10 mask already exists on the Modal data volume at
+    masks/kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000_low018.
+    Seed 0 is the original published run; seeds 1,2 are new.
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
+    mask_dir = (
+        f"{DATA_MOUNT}/masks/"
+        f"kitti_seq02_0034_sparse_every2_da2_lambda{lambda_depth}_nomask_{max_num_iterations}"
+        f"_low{thresh_tag}"
+    )
+
+    print(f"Headline mask dir: {mask_dir}")
+    print(f"Launching seeds: {seed_list}")
+
+    # Tuple order: kitti_seq_dir, lambda_depth, depth_loss_type, depth_sup_type,
+    #   max_num_iterations, photo_mask_dir, photo_mask_mode, photo_mask_threshold,
+    #   dataset_family, mip360_scene, mask_label, seed
+    tuples = [
+        (
+            kitti_seq_dir, lambda_depth, "mse", "da2",
+            max_num_iterations, mask_dir, "low", photo_mask_threshold,
+            "kitti", "bicycle", f"low{thresh_tag}", s,
+        )
+        for s in seed_list
+    ]
+    for _ in train.starmap(tuples):
+        pass
+    print("All headline seed runs complete.")
 
 
 # ---------------------------------------------------------------------------
@@ -1220,6 +1275,75 @@ def run_new_seq_experiments(
     print(f"  modal run modal_train_splatfacto.py::run_eval \\")
     print(f"    --kitti-seq-dir '{kitti_seq_dir}' --lambda-depth {lambda_depth} \\")
     print(f"    --photo-mask-threshold {ref_threshold} --masked")
+
+
+# ---------------------------------------------------------------------------
+# run_gt_comparison — rebuttal DN-Splatter comparison
+#
+# Runs two parallel baselines using LiDAR GT depth (depths_gt) instead of DA2:
+#   1. GT + L1 loss  (closest to DN-Splatter's depth-supervision component)
+#   2. GT + MSE loss (matches our existing hyperparameter for clean ablation)
+#
+# Prerequisites (run once before this):
+#   modal volume put kitti-nerf-data \
+#     data/kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_gt \
+#     kitti/kitti_select_static_5seq_sparse_every2/KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt/depths_gt
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::run_gt_comparison
+#   modal run modal_train_splatfacto.py::run_gt_comparison --lambda-depth 0.05
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_gt_comparison(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.1,
+    max_num_iterations: int = 50000,
+):
+    """Train two GT-depth baselines in parallel for DN-Splatter rebuttal comparison.
+
+    Experiment names produced:
+      kitti_seq02_0034_sparse_every2_gt_lambda<l>_nomask_<iters>  (MSE)
+      kitti_seq02_0034_sparse_every2_gt_lambda<l>_nomask_<iters>  (L1)
+    These are differentiated by the depth_loss_type stored in config.yml.
+    """
+    import json
+
+    print(f"\nDN-Splatter rebuttal comparison — GT depth baselines")
+    print(f"kitti_seq_dir:   {kitti_seq_dir}")
+    print(f"lambda_depth:    {lambda_depth}")
+    print(f"max_iterations:  {max_num_iterations}")
+    print("\nLaunching GT-MSE and GT-L1 in parallel...")
+
+    # Tuple order matches train():
+    #   kitti_seq_dir, lambda_depth, depth_loss_type, depth_sup_type,
+    #   max_num_iterations, photo_mask_dir, photo_mask_mode, photo_mask_threshold,
+    #   dataset_family, mip360_scene, mask_label, seed
+    # mask_label differentiates the two runs in the output folder name.
+    # GT-MSE gets "nomask" (default); GT-L1 gets "l1" so folders don't collide.
+    configs = [
+        (kitti_seq_dir, lambda_depth, "mse", "gt", max_num_iterations,
+         "", "low", 0.12, "kitti", "bicycle", "nomask", 0),
+        (kitti_seq_dir, lambda_depth, "l1",  "gt", max_num_iterations,
+         "", "low", 0.12, "kitti", "bicycle", "l1",     0),
+    ]
+    list(train.starmap(configs))
+
+    _, slug, _, _, sparse_tag = _resolve_dataset_paths(
+        "kitti", kitti_seq_dir, "bicycle", "gt"
+    )
+    mse_exp = _experiment_name(slug, sparse_tag, "gt", lambda_depth, max_num_iterations,
+                               mask_label="nomask")
+    l1_exp  = _experiment_name(slug, sparse_tag, "gt", lambda_depth, max_num_iterations,
+                               mask_label="l1")
+
+    print("\n========== GT comparison runs complete ==========")
+    print(f"  MSE exp: {mse_exp}")
+    print(f"  L1  exp: {l1_exp}")
+    print("\nEvaluate with:")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --depth-sup-type gt --lambda-depth {lambda_depth} --mask-label nomask")
+    print(f"  modal run modal_train_splatfacto.py::run_eval \\")
+    print(f"    --depth-sup-type gt --lambda-depth {lambda_depth} --mask-label l1")
 
 
 # ---------------------------------------------------------------------------

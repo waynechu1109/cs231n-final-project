@@ -102,8 +102,9 @@ def _exp_name(
     *,
     mask_label: str = "nomask",
     depth_sup_type: str = "da2",
+    seq_tag: str = "sparse_every2",
 ) -> str:
-    return f"{slug}_sparse_every2_{depth_sup_type}_lambda{lambda_depth}_{mask_label}_{max_steps}"
+    return f"{slug}_{seq_tag}_{depth_sup_type}_lambda{lambda_depth}_{mask_label}_{max_steps}"
 
 
 def _gin_flags(
@@ -180,16 +181,24 @@ def train_mipnerf(
     depth_loss_type: str = "mse",
     depth_sup_type: str = "da2",
     hold_every: int = 10,
+    seed: int = 0,
+    use_full_seq: bool = False,
 ):
     import os
     import subprocess
 
     slug = _derive_slug(kitti_seq_dir)
-    sparse_root = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq_sparse_every2"
-    data_dir = f"{sparse_root}/{kitti_seq_dir}"
+    if use_full_seq:
+        data_dir = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq/{kitti_seq_dir}"
+        seq_tag = "full"
+    else:
+        sparse_root = f"{DATA_MOUNT}/kitti/kitti_select_static_5seq_sparse_every2"
+        data_dir = f"{sparse_root}/{kitti_seq_dir}"
+        seq_tag = "sparse_every2"
+    effective_mask_label = f"{mask_label}_seed{seed}" if seed > 0 else mask_label
     ckpt_dir = (
         f"{OUT_MOUNT}/"
-        f"{_exp_name(slug, lambda_depth, max_steps, mask_label=mask_label, depth_sup_type=depth_sup_type)}"
+        f"{_exp_name(slug, lambda_depth, max_steps, mask_label=effective_mask_label, depth_sup_type=depth_sup_type, seq_tag=seq_tag)}"
         f"/mipnerf360"
     )
 
@@ -218,6 +227,7 @@ def train_mipnerf(
             photo_mask_mode=photo_mask_mode,
         ),
         "--gin_bindings=Config.checkpoint_every=25000",
+        f"--seed_offset={seed}",
         "--logtostderr",
     ]
 
@@ -225,7 +235,8 @@ def train_mipnerf(
     print(f"Data dir:     {data_dir}")
     print(f"Ckpt dir:     {ckpt_dir}")
     print(f"lambda_depth: {lambda_depth}")
-    print(f"mask_label:   {mask_label}")
+    print(f"mask_label:   {effective_mask_label}")
+    print(f"seed:         {seed}")
     print("=" * 60)
 
     subprocess.run(cmd, check=True, cwd="/opt/mipnerf")
@@ -451,3 +462,112 @@ def run_eval(
     print("\n========== Eval Results ==========")
     print(json.dumps(metrics, indent=2))
     print("==")
+
+
+# ---------------------------------------------------------------------------
+# run_mipnerf_headline_seeds — rerun the headline Mip-NeRF setting
+# (τ=0.16, λ=0.15) with extra seeds for variance estimation.
+# Seed 0 was trained locally; this launches seeds 1 and 2 on Modal.
+#
+# The low016 mask is read from the Modal data volume:
+#   masks/kitti_seq02_0034_sparse_every2_da2_lambda0.0_nomask_50000_low016
+#
+# Usage:
+#   modal run modal_train_mipnerf.py::run_mipnerf_headline_seeds
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_mipnerf_headline_seeds(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.15,
+    photo_mask_threshold: float = 0.16,
+    max_num_iterations: int = 50000,
+    seeds: str = "1,2",
+):
+    """Run the headline Mip-NeRF-360 setting (τ=0.16, λ=0.15) over extra seeds.
+
+    Seed 0 is the original locally-trained run
+    (checkpoints_kitti_seq02_0034_lambda0.15_low016_50000).
+    Seeds 1 and 2 are new Modal runs for variance estimation.
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
+    mask_dir = (
+        f"{DATA_MOUNT}/masks/"
+        f"kitti_seq02_0034_sparse_every2_da2_lambda0.0_nomask_50000"
+        f"_low{thresh_tag}"
+    )
+    mask_label = f"low{thresh_tag}"
+
+    print(f"Headline mask dir: {mask_dir}")
+    print(f"Launching seeds: {seed_list}")
+
+    # Tuple order: kitti_seq_dir, lambda_depth, max_steps, fixed_photo_mask_dir,
+    #   photo_mask_threshold, photo_mask_mode, mask_label, depth_loss_type,
+    #   depth_sup_type, hold_every, seed
+    tuples = [
+        (
+            kitti_seq_dir, lambda_depth, max_num_iterations, mask_dir,
+            photo_mask_threshold, "low", mask_label, "mse", "da2", 10, s,
+        )
+        for s in seed_list
+    ]
+    for _ in train_mipnerf.starmap(tuples):
+        pass
+    print("All Mip-NeRF headline seed runs complete.")
+
+
+# ---------------------------------------------------------------------------
+# run_mipnerf_rebuttal_seeds — rerun the headline setting using the SAME
+# protocol as the paper's local checkpoints:
+#   • Full 175-frame KITTISeq02 directory (not sparse_every2)
+#   • hold_every=8  → 17 test images, matching paper Table 3 PSNR (~20 dB)
+#   • τ=0.16, λ=0.15, masks from full-seq photo_masks_rgbonly_low016_sampleevery2
+#
+# Uploads required before running:
+#   images/, depths_da2/, cameras.npz, photo_masks_rgbonly_low016_sampleevery2/
+#   from the full KITTISeq02 dir (all uploaded to kitti-nerf-data volume).
+#
+# Usage:
+#   modal run modal_train_mipnerf.py::run_mipnerf_rebuttal_seeds
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_mipnerf_rebuttal_seeds(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.15,
+    photo_mask_threshold: float = 0.16,
+    max_num_iterations: int = 50000,
+    seeds: str = "1,2",
+):
+    """Re-run headline Mip-NeRF setting with full 175-frame sequence + hold_every=8.
+
+    Matches the local paper protocol so seeds are directly comparable to
+    the seed-0 checkpoint in data/kitti/.../logs/checkpoints_..._lambda0.15_low016_50000.
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
+    mask_label = f"low{thresh_tag}"
+
+    # Masks live inside the full-seq data directory on the Modal volume
+    full_seq_data_dir = (
+        f"{DATA_MOUNT}/kitti/kitti_select_static_5seq/{kitti_seq_dir}"
+    )
+    mask_dir = f"{full_seq_data_dir}/photo_masks_rgbonly_low{thresh_tag}_sampleevery2"
+
+    print(f"Full-seq data dir: {full_seq_data_dir}")
+    print(f"Mask dir: {mask_dir}")
+    print(f"Launching seeds: {seed_list}  (hold_every=8, use_full_seq=True)")
+
+    # Tuple order matches train_mipnerf signature:
+    #   kitti_seq_dir, lambda_depth, max_steps, fixed_photo_mask_dir,
+    #   photo_mask_threshold, photo_mask_mode, mask_label, depth_loss_type,
+    #   depth_sup_type, hold_every, seed, use_full_seq
+    tuples = [
+        (
+            kitti_seq_dir, lambda_depth, max_num_iterations, mask_dir,
+            photo_mask_threshold, "low", mask_label, "mse", "da2", 8, s, True,
+        )
+        for s in seed_list
+    ]
+    for _ in train_mipnerf.starmap(tuples):
+        pass
+    print("All Mip-NeRF rebuttal seed runs complete.")

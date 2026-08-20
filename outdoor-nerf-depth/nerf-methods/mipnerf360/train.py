@@ -37,17 +37,20 @@ import numpy as np
 from os import path
 from PIL import Image
 
+from absl import flags
 configs.define_common_flags()
+flags.DEFINE_integer('seed_offset', 0, 'Offset added to JAX PRNGKey and numpy seeds for reproducibility across runs.')
 jax.config.parse_flags_with_absl()
 
 TIME_PRECISION = 1000  # Internally represent integer times in milliseconds.
 
 
 def main(unused_argv):
-  rng = random.PRNGKey(20200823)
+  seed_offset = flags.FLAGS.seed_offset
+  rng = random.PRNGKey(20200823 + seed_offset)
   # Shift the numpy random seed by host_id() to shuffle data loaded by different
   # hosts.
-  np.random.seed(20201473 + jax.host_id())
+  np.random.seed(20201473 + jax.host_id() + seed_offset)
 
   config = configs.load_config()
 
