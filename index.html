@@ -157,17 +157,19 @@ Stanford University &nbsp;·&nbsp; <sup>*</sup>Equal contribution
 
 <p>
 Sparse-view neural reconstruction is challenging in outdoor driving scenes, where cameras move along a narrow
-forward-facing trajectory and provide limited multi-view overlap. Although monocular depth estimators can provide
-dense geometric priors, their predictions are noisy and not uniformly reliable across image regions. In this work,
-we study monocular depth supervision for sparse-view neural reconstruction. We use <b>Depth Anything V2 (DA-V2)</b>
-as a dense monocular depth prior, align its predictions to metric depth using scale-shift fitting, and apply depth
-supervision <i>selectively</i> through photometric masks generated from an RGB-only baseline model. We evaluate this
-strategy on two representative scene representations: <b>Mip-NeRF-360</b> and <b>Splatfacto</b>. On KITTISeq02 under
-an every-2 sparse-view setting, masked depth supervision gives only marginal gains for Mip-NeRF-360, while Splatfacto
-benefits more clearly, improving PSNR from 14.903 to 15.932 and reducing RMSE from 0.542 to 0.100. Matched-ratio mask
-ablations and additional KITTISeq05 experiments show that the gains come from selecting reliable low-error regions
-rather than simply reducing the number of depth-supervised pixels. Overall, monocular depth priors are useful for
-under-constrained sparse-view reconstruction, but should be applied selectively and with moderate weighting.
+forward-facing trajectory and provide limited multi-view overlap. Monocular depth estimators can provide dense
+geometric priors, but their predictions are noisy and not uniformly reliable across image regions. We use
+<b>Depth Anything V2 (DA-V2)</b> as a dense monocular depth prior, align its predictions to metric depth via
+per-image scale-shift fitting on sparse anchors (LiDAR on KITTI, COLMAP on Bicycle), and apply depth supervision
+<i>selectively</i> through photometric masks generated from an RGB-only baseline. We evaluate this strategy on two
+representative scene representations: <b>Mip-NeRF-360</b> and <b>Splatfacto</b>. Since the mask modifies an
+existing depth loss rather than introducing one, we compare against <b>global (unmasked) supervision</b> as the
+primary baseline. Across KITTI sequences 00/02/05, the mask yields <b>+0.44 to +0.70 dB PSNR</b> for Splatfacto over
+global supervision at tied or better RMSE, and no change on Mip-NeRF-360 &mdash; the mask primarily enhances
+rendering fidelity rather than geometry. Matched-ratio ablations confirm the gains come from selecting reliable
+low-error regions rather than simply reducing the number of depth-supervised pixels. Without any ground-truth
+depth, our mask also outperforms three LiDAR-supervised baselines. On the object-centric Mip-NeRF-360 Bicycle
+scene, depth supervision improves geometry but hurts rendering quality when multi-view coverage is already strong.
 </p>
 
 <h2>Method</h2>
@@ -220,6 +222,12 @@ over the full image:
     \mathcal{L}_\text{depth} = \frac{1}{N} \sum_{u} M_\text{eff}(u) \big( \hat{d}(u) - \hat{d}_\text{prior}(u) \big)^2
   \]
 </div>
+<p>
+Setting \(\tau=1.0\) gives \(M_\tau \equiv 1\) &mdash; global (unmasked) depth supervision. This condition, not
+the depth-free \(\lambda_\text{depth}=0\) baseline, is the primary baseline for judging the mask's contribution:
+it isolates the effect of <i>where</i> depth is supervised from the effect of <i>whether</i> depth is supervised
+at all.
+</p>
 
 <div class="figure">
   <img src="media/data_prep.png" alt="Dataset and mask-generation pipeline">
@@ -231,13 +239,64 @@ over the full image:
   </div>
 </div>
 
+<h2>Depth Prior Quality</h2>
+
+<p>
+Before using DA-V2 as supervision, we evaluate the aligned depth against valid KITTI LiDAR pixels. The mean
+absolute error of alignment is <b>4.22 m</b>. Sweeping the number of LiDAR anchors used for scale-shift fitting
+shows the 2-DOF optimization saturates long before typical LiDAR density is reached &mdash; alignment MAE is stable
+from ~95k anchors down to 500 per frame, degrading only under extreme sparsity. The 4.22 m error floor reflects
+DA-V2's intrinsic local structural limitations rather than calibration artifacts.
+</p>
+
+<table>
+  <thead>
+    <tr><th>Anchors / frame</th><th>Alignment MAE &darr; (m)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>~95,000</td><td>4.22</td></tr>
+    <tr><td>5,000</td><td>4.22</td></tr>
+    <tr><td>500</td><td>4.22</td></tr>
+    <tr><td>100</td><td>4.29</td></tr>
+    <tr><td>50</td><td>4.29</td></tr>
+    <tr><td>20</td><td>4.51</td></tr>
+  </tbody>
+</table>
+
+<h3>Photometric Error as a Reliability Proxy</h3>
+
+<p>
+Because photometric and depth errors are measured against different references, low photometric error does not by
+construction imply low depth error. We validate the mask directly against GT LiDAR. Depth RMSE is <b>34&ndash;39%
+lower inside the mask</b> at every threshold, and inside-mask RMSE increases monotonically with &tau; (r=1.0).
+Pixel-level differences are highly significant (p&lt;10<sup>&minus;50</sup>); the frame-level paired t-test gives
+p=0.047 (n=8).
+</p>
+
+<table>
+  <thead>
+    <tr><th>&tau;</th><th>Inside RMSE &darr; (m)</th><th>Outside RMSE &darr; (m)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>0.14</td><td>6.30</td><td>9.58</td></tr>
+    <tr><td>0.16</td><td>6.32</td><td>9.82</td></tr>
+    <tr class="highlight"><td>0.18 (ours)</td><td>6.33</td><td>10.01</td></tr>
+    <tr><td>0.20</td><td>6.36</td><td>10.24</td></tr>
+    <tr><td>0.22</td><td>6.38</td><td>10.45</td></tr>
+    <tr><td>1.00 (global)</td><td>6.43</td><td>&mdash;</td></tr>
+  </tbody>
+</table>
+
 <h2>Results</h2>
 
 <h3>Splatfacto — KITTISeq02 every-2</h3>
 <p>
-Splatfacto gains clearly from masked depth supervision. The best rendering quality is at &tau;=0.18, &lambda;=0.10
-(<b>+1.03 dB PSNR</b>, RMSE down from 0.542 to 0.100). Increasing &lambda; to 0.15 improves RMSE further but trades
-away PSNR — a geometry–photometry tradeoff.
+Splatfacto gains clearly from monocular depth supervision. Using any DA-V2 depth prior &mdash; even without a
+mask &mdash; improves PSNR (14.903 &rarr; 15.494 for global) and cuts RMSE by ~80% (0.542 &rarr; 0.101). Masking
+the depth loss at &tau;=0.18 adds a further <b>+0.44 dB PSNR</b> at tied RMSE. In short: the RMSE drop comes from
+using a depth prior at all, and masking is what improves rendering fidelity. Over three seeds, masked
+15.30&plusmn;0.57 vs global 15.07&plusmn;0.38 dB (+0.23 dB mean); the &minus;80% RMSE improvement over RGB-only is
+consistent across seeds.
 </p>
 <table>
   <thead>
@@ -247,8 +306,8 @@ away PSNR — a geometry–photometry tradeoff.
     <tr><td>RGB-only</td><td>14.903</td><td>0.433</td><td>0.446</td><td>0.542</td></tr>
     <tr><td>0.16, 0.10</td><td>15.452</td><td>0.454</td><td>0.434</td><td>0.106</td></tr>
     <tr class="highlight"><td>0.18, 0.10 (ours)</td><td>15.932</td><td>0.477</td><td>0.408</td><td>0.100</td></tr>
-    <tr><td>0.18, 0.15</td><td>15.588</td><td>0.459</td><td>0.436</td><td>0.096</td></tr>
-    <tr><td>1.00, 0.10</td><td>15.494</td><td>0.448</td><td>0.434</td><td>0.101</td></tr>
+    <tr><td>0.18, 0.15</td><td>15.588</td><td>0.459</td><td>0.436</td><td><b>0.096</b></td></tr>
+    <tr><td>1.00, 0.10 (global)</td><td>15.494</td><td>0.448</td><td>0.434</td><td>0.101</td></tr>
   </tbody>
 </table>
 
@@ -269,6 +328,71 @@ every metric — the improvement is not from fewer supervised pixels.
   </tbody>
 </table>
 
+<h3>Multi-Sequence Generalization</h3>
+<p>
+The masked-vs-global advantage generalizes beyond KITTISeq02. Across KITTI 00/027, 02/034, and 05/018, the
+low-error mask (&tau;=0.18) outperforms global supervision on every metric, with PSNR gains of <b>+0.44, +0.64,
+and +0.70 dB</b> at tied or better RMSE.
+</p>
+<table>
+  <thead>
+    <tr><th>Seq</th><th>Method</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>02/034</td><td>RGB-only</td><td>14.90</td><td>0.433</td><td>0.446</td><td>0.542</td></tr>
+    <tr><td></td><td>Global (&tau;=1.0)</td><td>15.49</td><td>0.448</td><td>0.434</td><td>0.101</td></tr>
+    <tr class="highlight"><td></td><td>Masked (&tau;=0.18)</td><td><b>15.93</b></td><td><b>0.477</b></td><td><b>0.408</b></td><td><b>0.100</b></td></tr>
+    <tr><td>05/018</td><td>RGB-only</td><td>14.89</td><td>0.521</td><td>0.493</td><td>0.807</td></tr>
+    <tr><td></td><td>Global (&tau;=1.0)</td><td>15.26</td><td>0.534</td><td>0.469</td><td>0.096</td></tr>
+    <tr class="highlight"><td></td><td>Masked (&tau;=0.18)</td><td><b>15.90</b></td><td><b>0.548</b></td><td><b>0.446</b></td><td><b>0.096</b></td></tr>
+    <tr><td>00/027</td><td>RGB-only</td><td>14.67</td><td>0.487</td><td>0.401</td><td>0.514</td></tr>
+    <tr><td></td><td>Global (&tau;=1.0)</td><td>16.69</td><td>0.554</td><td>0.302</td><td>0.125</td></tr>
+    <tr class="highlight"><td></td><td>Masked (&tau;=0.18)</td><td><b>17.39</b></td><td><b>0.571</b></td><td><b>0.288</b></td><td><b>0.114</b></td></tr>
+  </tbody>
+</table>
+
+<h3>Comparison to Depth-Supervised Baselines</h3>
+<p>
+We benchmark against four depth-supervised methods on KITTISeq02 Frag.&nbsp;034, all retrained for 50k iterations
+on our sparse split. The top group uses <i>no</i> GT depth; the bottom group uses GT LiDAR. Our masked DA-V2
+approach outperforms three LiDAR-supervised baselines &mdash; DNGaussian, DepthRegGS, and SparseGS &mdash; which
+target indoor or object-centric scenes. Only DN-Splatter leads (+0.29 dB PSNR, &minus;0.12 LPIPS), using GT LiDAR
+unavailable at test time; its margin reflects depth-source quality rather than masking.
+</p>
+<table>
+  <thead>
+    <tr><th>Method</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>RGB-only (no depth)</td><td>14.903</td><td>0.433</td><td>0.446</td></tr>
+    <tr><td>DA-V2 depth, no mask (global)</td><td>15.494</td><td>0.448</td><td>0.434</td></tr>
+    <tr class="highlight"><td>Ours (&tau;=0.18, &lambda;=0.10)</td><td>15.932</td><td>0.477</td><td>0.408</td></tr>
+    <tr><td>DNGaussian (GT LiDAR)</td><td>9.98</td><td>0.303</td><td>0.710</td></tr>
+    <tr><td>DepthRegGS (GT LiDAR)</td><td>8.71</td><td>0.229</td><td>0.737</td></tr>
+    <tr><td>SparseGS (GT LiDAR)</td><td>12.20</td><td>0.359</td><td>0.648</td></tr>
+    <tr><td>DN-Splatter (GT LiDAR)</td><td><b>16.22</b></td><td><b>0.489</b></td><td><b>0.289</b></td></tr>
+  </tbody>
+</table>
+
+<h3>Comparison to a Depth-Inconsistency Mask</h3>
+<p>
+We compare our photometric mask against a static, one-shot approximation of the Depth-Inconsistency Mask (DIM) at
+a matched reliable-pixel fraction. Ratio = MAE(outside) / MAE(inside): &gt;1 means the mask isolates accurate
+DA-V2 depth; &lt;1 means no separation. Our mask separates accurate from inaccurate depth (ratio <b>1.17</b>)
+while the DIM proxy does not (<b>0.87</b>). This is expected: DIM keys on distortions that depth-supervised
+training itself induces, so a one-shot proxy has nothing to key on. Both are computed once and held fixed, so the
+comparison is apples-to-apples.
+</p>
+<table>
+  <thead>
+    <tr><th>Mask</th><th>Threshold</th><th>Fraction</th><th>MAE in / out (m)</th><th>Ratio</th></tr>
+  </thead>
+  <tbody>
+    <tr class="highlight"><td>Photometric (ours)</td><td>&tau;=0.18</td><td>95.9%</td><td>4.14 / 4.82</td><td><b>1.17</b></td></tr>
+    <tr><td>DIM proxy</td><td>&epsilon;=17.6 m</td><td>96.1%</td><td>4.19 / 3.66</td><td>0.87</td></tr>
+  </tbody>
+</table>
+
 <div class="figure">
   <img src="media/splatfacto_grid.png" alt="Splatfacto lambda by tau qualitative ablation grid">
 
@@ -281,17 +405,38 @@ every metric — the improvement is not from fewer supervised pixels.
 
 <h3>Mip-NeRF-360 — KITTISeq02 every-2</h3>
 <p>
-The implicit density field is far more sensitive to noisy monocular depth. Masked supervision yields only marginal
-PSNR gains (best +0.23 dB) and does not improve geometry; SSIM, LPIPS, and RMSE slightly degrade.
+The implicit density field is far more sensitive to noisy monocular depth. The best PSNR (20.607 dB) comes from
+<b>global (&tau;=1.0)</b> supervision &mdash; the optimal configuration bypasses the mask entirely. The best
+masked setting trails global by 0.026 dB, well within multi-seed variance (20.57&plusmn;0.04 dB). All
+depth-supervised settings, including global, degrade SSIM, LPIPS, and geometry relative to RGB-only (RMSE rises
+from 2.703 to &ge;3.532).
 </p>
 <table>
   <thead>
     <tr><th>Setting (&tau;, &lambda;)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
   </thead>
   <tbody>
-    <tr><td>RGB-only</td><td>20.378</td><td>0.601</td><td>0.409</td><td>2.703</td></tr>
+    <tr class="highlight"><td>RGB-only</td><td>20.378</td><td><b>0.601</b></td><td><b>0.409</b></td><td><b>2.703</b></td></tr>
+    <tr><td>0.16, 0.15</td><td>20.581</td><td>0.596</td><td>0.415</td><td>3.654</td></tr>
     <tr><td>0.18, 0.10</td><td>20.384</td><td>0.594</td><td>0.416</td><td>3.532</td></tr>
-    <tr class="highlight"><td>1.00, 0.15</td><td>20.607</td><td>0.595</td><td>0.412</td><td>3.580</td></tr>
+    <tr><td>1.00, 0.15 (global)</td><td><b>20.607</b></td><td>0.595</td><td>0.412</td><td>3.580</td></tr>
+  </tbody>
+</table>
+
+<h3>Mip-NeRF-360 — KITTISeq05</h3>
+<p>
+On KITTISeq05, both global and masked DA-V2 supervision degrade rendering and geometry compared with RGB-only
+training. Masking recovers 0.22 dB PSNR over global (16.612 vs 16.389), so it mitigates rather than reverses the
+harm &mdash; monocular depth priors are not reliably beneficial for the implicit density representation.
+</p>
+<table>
+  <thead>
+    <tr><th>Setting (&tau;, &lambda;)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>AbsRel &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr class="highlight"><td>RGB-only</td><td><b>17.068</b></td><td><b>0.546</b></td><td><b>0.529</b></td><td><b>0.1166</b></td><td><b>2.978</b></td></tr>
+    <tr><td>1.00, 0.15 (global)</td><td>16.389</td><td>0.527</td><td>0.569</td><td>0.1527</td><td>4.803</td></tr>
+    <tr><td>0.18, 0.15</td><td>16.612</td><td>0.530</td><td>0.563</td><td>0.1399</td><td>4.454</td></tr>
   </tbody>
 </table>
 
@@ -317,9 +462,23 @@ PSNR gains (best +0.23 dB) and does not improve geometry; SSIM, LPIPS, and RMSE 
 <h2>Object-Centric Bicycle</h2>
 <p>
 When multi-view coverage is already strong, the story flips. On the Mip-NeRF-360 Bicycle scene, RGB-only Splatfacto
-gives the best rendering quality, while depth supervision consistently lowers RMSE (1.479 &rarr; 0.722) at the cost
-of PSNR / SSIM / LPIPS — depth regularization over-constrains an already well-posed reconstruction.
+gives the best rendering quality (17.731 PSNR), while depth supervision consistently lowers RMSE (1.479 &rarr;
+0.722) at the cost of PSNR / SSIM / LPIPS &mdash; depth regularization over-constrains an already well-posed
+reconstruction. Global supervision gives the best PSNR among depth-supervised runs (17.593 vs 17.466 for the best
+mask), confirming the mask's rendering gain is specific to sparse forward-facing trajectories.
 </p>
+<table>
+  <thead>
+    <tr><th>Setting (&tau;, &lambda;)</th><th>PSNR &uarr;</th><th>SSIM &uarr;</th><th>LPIPS &darr;</th><th>RMSE &darr;</th></tr>
+  </thead>
+  <tbody>
+    <tr class="highlight"><td>RGB-only</td><td><b>17.731</b></td><td><b>0.570</b></td><td><b>0.240</b></td><td>1.479</td></tr>
+    <tr><td>0.14, 0.15</td><td>17.036</td><td>0.477</td><td>0.309</td><td><b>0.722</b></td></tr>
+    <tr><td>0.18, 0.05</td><td>17.466</td><td>0.520</td><td>0.279</td><td>0.751</td></tr>
+    <tr><td>0.22, 0.10</td><td>17.106</td><td>0.491</td><td>0.297</td><td>0.725</td></tr>
+    <tr><td>1.00, 0.05 (global)</td><td>17.593</td><td>0.520</td><td>0.275</td><td>0.763</td></tr>
+  </tbody>
+</table>
 
 <div class="figure">
   <img src="media/bicycle_grid.png" alt="Bicycle lambda by tau qualitative ablation grid">
@@ -333,10 +492,13 @@ of PSNR / SSIM / LPIPS — depth regularization over-constrains an already well-
 <h2>Takeaways</h2>
 <p>
 Monocular depth priors are most useful for <b>explicit Gaussian representations</b> in under-constrained,
-forward-facing sparse-view scenes, and less reliable for implicit NeRF-style density fields. A moderate depth weight
-on a low-error reliability mask improves both rendering and geometry for Splatfacto, while too-strong supervision
-sacrifices RGB quality for depth metrics. Future work: better scale alignment, uncertainty-aware masks, and adaptive
-depth-loss weighting.
+forward-facing sparse-view scenes, and less reliable for implicit NeRF-style density fields. The RMSE drop for
+Splatfacto comes from using a depth prior <i>at all</i>; masking is what improves rendering fidelity, adding
+<b>+0.44 to +0.70 dB PSNR</b> over global supervision across KITTI 00/02/05 at tied or better RMSE, with no gain
+for Mip-NeRF-360 or the object-centric Bicycle scene. Without any ground-truth depth, our mask also outperforms
+three LiDAR-supervised baselines (DNGaussian, DepthRegGS, SparseGS). Our numbers use DA-V2, but the
+explicit-vs-implicit architectural insights are prior-agnostic; sweep values (&tau;, &lambda;) are
+dataset-specific. Future work: better scale alignment, uncertainty-aware masks, and adaptive depth-loss weighting.
 </p>
 
 <h2>BibTeX</h2>
