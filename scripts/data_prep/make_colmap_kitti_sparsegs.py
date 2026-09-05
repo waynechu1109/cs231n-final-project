@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
-"""Convert a nerfstudio-format KITTI dataset to COLMAP format for DNGaussian.
+"""Convert a nerfstudio-format KITTI dataset to COLMAP + npy-depth format for SparseGS.
 
-DNGaussian reads camera poses from COLMAP sparse/ binaries (cameras.bin +
-images.bin), not from poses_bounds.npy.  poses_bounds.npy is only used for
-the spiral rendering path (CreateLLFFSpiral) which we don't need.
+SparseGS (Xiong et al. 2023, arXiv 2312.00206) reads:
+  - Camera poses from COLMAP sparse/ binaries (cameras.bin + images.bin + points3D.bin)
+  - Depth maps from <source_path>/depths/<stem>.npy  (float32, metres, 0 = invalid)
+
+The Pearson correlation depth loss is scale-invariant, so both GT LiDAR depths
+(in metric metres) and monocular DA-V2 depths (arbitrary scale) work directly.
 
 Input:
   --src           nerfstudio dataset dir (contains transforms.json + images/)
   --dst           output directory
-  --depth-dir     optional dir with uint16 PNG depth maps named <stem>.png
+  --depth-dir     optional dir with depth files:
+                    • uint16 PNG  (<stem>.png) — KITTI GT LiDAR format
+                    • float32 npy (<stem>.npy) — DA-V2 or pre-processed depths
   --overwrite     overwrite dst if it already exists
 
 Output layout:
   <dst>/
     sparse/0/
       cameras.bin      (single PINHOLE camera)
-      images.bin       (one entry per frame, no 2-D points)
-      points3D.bin     (empty — DNGaussian uses random or depth init)
+      images.bin       (one entry per frame)
+      points3D.bin     (back-projected from depth maps, or empty)
     images/
-      <name>.png       relative symlinks → src images
-      depth_maps/
-        depth_<stem>.png   uint16 PNG copied from --depth-dir
+      <name>.png       copied from src
+    depths/
+      <stem>.npy       float32 depth in metres (0 = invalid)
 """
 
 from __future__ import annotations
@@ -40,9 +45,6 @@ from PIL import Image
 # Convention helpers
 # ---------------------------------------------------------------------------
 
-# Nerfstudio uses OpenGL camera convention (x right, y up, z back).
-# COLMAP uses OpenCV (x right, y down, z forward).
-# Right-multiplying c2w by this matrix flips the camera's y and z axes.
 _GL_TO_CV = np.diag([1.0, -1.0, -1.0, 1.0])
 
 
@@ -90,98 +92,70 @@ def c2w_to_colmap(c2w_gl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 # COLMAP binary writers
 # ---------------------------------------------------------------------------
 
-def write_cameras_bin(path: Path,
-                      width: int, height: int,
-                      fx: float, fy: float,
-                      cx: float, cy: float) -> None:
-    """Write a single PINHOLE camera to cameras.bin."""
+def write_cameras_bin(path: Path, width: int, height: int,
+                      fx: float, fy: float, cx: float, cy: float) -> None:
     with open(path, "wb") as f:
-        f.write(struct.pack("<Q", 1))           # num_cameras
-        f.write(struct.pack("<I", 1))           # camera_id = 1
-        f.write(struct.pack("<i", 1))           # model_id: PINHOLE = 1
+        f.write(struct.pack("<Q", 1))
+        f.write(struct.pack("<I", 1))
+        f.write(struct.pack("<i", 1))   # PINHOLE = 1
         f.write(struct.pack("<Q", width))
         f.write(struct.pack("<Q", height))
         f.write(struct.pack("<4d", fx, fy, cx, cy))
 
 
-def write_images_bin(path: Path,
-                     images_data: list[tuple]) -> None:
-    """Write images.bin.
-
-    images_data: list of (image_id, qvec[4], tvec[3], camera_id, name_str)
-    No 2-D point observations (num_points2D = 0).
-    """
+def write_images_bin(path: Path, images_data: list[tuple]) -> None:
     with open(path, "wb") as f:
         f.write(struct.pack("<Q", len(images_data)))
         for image_id, qvec, tvec, camera_id, name in images_data:
             f.write(struct.pack("<I", image_id))
-            f.write(struct.pack("<4d", *qvec))  # qw, qx, qy, qz
-            f.write(struct.pack("<3d", *tvec))  # tx, ty, tz
+            f.write(struct.pack("<4d", *qvec))
+            f.write(struct.pack("<3d", *tvec))
             f.write(struct.pack("<I", camera_id))
             f.write(name.encode() + b"\x00")
-            f.write(struct.pack("<Q", 0))       # num_points2D
+            f.write(struct.pack("<Q", 0))   # num_points2D = 0
 
 
 def write_points3d_bin(path: Path, points: list[tuple] | None = None) -> None:
-    """Write points3D.bin.
-
-    points: list of (x, y, z, r, g, b) in world coordinates.
-    If None or empty, writes an empty file.
-    No 2-D track observations (track_length=0).
-    """
     pts = points or []
     with open(path, "wb") as f:
         f.write(struct.pack("<Q", len(pts)))
         for i, (x, y, z, r, g, b) in enumerate(pts):
-            f.write(struct.pack("<Q", i + 1))           # point_id
-            f.write(struct.pack("<3d", x, y, z))         # xyz
-            f.write(struct.pack("<3B", int(r), int(g), int(b)))  # rgb
-            f.write(struct.pack("<d", 0.0))              # error
-            f.write(struct.pack("<Q", 0))                # track_length = 0
+            f.write(struct.pack("<Q", i + 1))
+            f.write(struct.pack("<3d", x, y, z))
+            f.write(struct.pack("<3B", int(r), int(g), int(b)))
+            f.write(struct.pack("<d", 0.0))
+            f.write(struct.pack("<Q", 0))
 
 
 def backproject_depth(
-    depth_path: Path,
+    depth_m: np.ndarray,
     image_path: Path,
     c2w_gl: np.ndarray,
     fx: float, fy: float, cx: float, cy: float,
     n_sample: int = 200,
 ) -> list[tuple]:
-    """Back-project KITTI uint16 depth map pixels to world-frame 3D points.
-
-    Returns list of (x, y, z, r, g, b) tuples.
-    """
-    depth_raw = np.array(Image.open(depth_path), dtype=np.float32)
-    depth_m = depth_raw / 256.0          # KITTI encoding: pixel / 256 = metres
+    """Back-project a float32 depth map (metres) to world-frame 3D points."""
     img = np.array(Image.open(image_path))
     h, w = depth_m.shape
-
     valid_mask = depth_m > 0
     ys, xs = np.where(valid_mask)
     if len(ys) == 0:
         return []
-
     idx = np.linspace(0, len(ys) - 1, min(n_sample, len(ys)), dtype=int)
     ys_s, xs_s = ys[idx], xs[idx]
     ds_s = depth_m[ys_s, xs_s]
-
-    # Back-project into OpenCV camera frame (x right, y down, z forward)
     X_cam = (xs_s - cx) / fx * ds_s
     Y_cam = (ys_s - cy) / fy * ds_s
     Z_cam = ds_s
-    P_cam_cv = np.stack([X_cam, Y_cam, Z_cam, np.ones_like(Z_cam)], axis=1)  # (N,4)
-
-    # c2w_cv = c2w_gl @ diag(1,-1,-1,1)
+    P_cam_cv = np.stack([X_cam, Y_cam, Z_cam, np.ones_like(Z_cam)], axis=1)
     c2w_cv = c2w_gl @ _GL_TO_CV
-    P_world = (c2w_cv @ P_cam_cv.T).T[:, :3]  # (N, 3)
-
+    P_world = (c2w_cv @ P_cam_cv.T).T[:, :3]
     ys_c = np.clip(ys_s, 0, h - 1)
     xs_c = np.clip(xs_s, 0, w - 1)
     if img.ndim == 3:
         rgbs = img[ys_c, xs_c, :3]
     else:
         rgbs = np.stack([img[ys_c, xs_c]] * 3, axis=1)
-
     return [
         (float(P_world[i, 0]), float(P_world[i, 1]), float(P_world[i, 2]),
          int(rgbs[i, 0]), int(rgbs[i, 1]), int(rgbs[i, 2]))
@@ -195,17 +169,17 @@ def backproject_depth(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Convert nerfstudio KITTI dataset to COLMAP format for DNGaussian."
+        description="Convert nerfstudio KITTI dataset to COLMAP + npy-depth format for SparseGS."
     )
     p.add_argument("--src", type=Path, required=True,
                    help="Nerfstudio dataset dir (transforms.json + images/).")
     p.add_argument("--dst", type=Path, required=True,
-                   help="Output COLMAP dataset directory.")
+                   help="Output SparseGS dataset directory.")
     p.add_argument("--depth-dir", type=Path, default=None,
-                   help="Dir with uint16 PNG depth maps named <stem>.png. "
-                        "Copied to <dst>/images/depth_maps/depth_<stem>.png.")
-    p.add_argument("--overwrite", action="store_true",
-                   help="Overwrite the destination directory if it exists.")
+                   help="Dir with depth maps: uint16 PNG (<stem>.png, KITTI GT) "
+                        "or float32 npy (<stem>.npy, DA-V2). "
+                        "Saved to <dst>/depths/<stem>.npy.")
+    p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
 
 
@@ -221,7 +195,6 @@ def main() -> None:
     if args.depth_dir is not None and not args.depth_dir.is_dir():
         raise SystemExit(f"Depth directory not found: {args.depth_dir}")
 
-    # Load transforms.json
     tf_path = args.src / "transforms.json"
     if not tf_path.exists():
         raise SystemExit(f"Missing transforms.json: {tf_path}")
@@ -239,13 +212,9 @@ def main() -> None:
     if not frames:
         raise SystemExit("transforms.json contains no frames.")
 
-    # Setup destination
     if args.dst.exists():
         if not args.overwrite:
-            raise SystemExit(
-                f"Destination already exists: {args.dst}\n"
-                "Use --overwrite to replace it."
-            )
+            raise SystemExit(f"Destination exists: {args.dst}\nUse --overwrite.")
         if args.dst.is_symlink() or args.dst.is_file():
             args.dst.unlink()
         else:
@@ -254,13 +223,10 @@ def main() -> None:
     sparse_dir = args.dst / "sparse" / "0"
     sparse_dir.mkdir(parents=True)
 
-    # cameras.bin — one shared PINHOLE camera
     write_cameras_bin(sparse_dir / "cameras.bin", w, h, fx, fy, cx, cy)
 
-    # images.bin — one entry per frame; also collect per-frame metadata for
-    # depth back-projection (done after images/ is built so src paths are known)
     images_data = []
-    frame_meta: list[tuple] = []   # (src_img_path, c2w_gl) for backproject step
+    frame_meta: list[tuple] = []
     for idx, frame in enumerate(frames):
         src_img = (args.src / frame["file_path"]).resolve()
         if not src_img.exists():
@@ -272,15 +238,9 @@ def main() -> None:
         frame_meta.append((src_img, c2w_gl))
 
     write_images_bin(sparse_dir / "images.bin", images_data)
-
-    # points3D.bin — back-project GT depth maps to world-frame 3D points.
-    # DNGaussian's readColmapSceneInfo calls pcd operations on xyz unconditionally,
-    # so we must supply real points even when using random initialisation later.
-    # Back-projection is deferred until after depth_dir is confirmed; write a
-    # temporary empty file now and overwrite it below if depth maps exist.
     write_points3d_bin(sparse_dir / "points3D.bin")
 
-    # images/ — copy source images (Modal FUSE does not follow symlinks)
+    # images/ — copy source images
     images_dst = args.dst / "images"
     images_dst.mkdir()
     stems: list[str] = []
@@ -289,63 +249,52 @@ def main() -> None:
         shutil.copy2(src_img, images_dst / src_img.name)
         stems.append(src_img.stem)
 
-    # depth_maps/ — DNGaussian expects depth maps at <source_path>/depth_maps/,
-    # i.e., sibling of images/, NOT inside images/.
-    # DNGaussian's PILtoTorch divides by 255, so depth maps must be uint8.
-    # KITTI GT depth is uint16 (pixel/256 = meters).
-    # Use a fixed scene-wide scale: depth_m / MAX_DEPTH_M * 255, so that
-    # after PILtoTorch /255 the values are consistent across frames
-    # (1.0 = MAX_DEPTH_M metres).  Per-image normalisation destroyed the
-    # inter-frame scale that DNGaussian needs to anchor geometry.
-    _MAX_DEPTH_M = 100.0  # KITTI LiDAR useful range; depths beyond this are sparse
+    # depths/ — SparseGS expects float32 .npy files (depth in metres, 0=invalid).
+    # Pearson loss is scale-invariant so both GT LiDAR and monocular depths work.
     depth_copied = 0
     all_points: list[tuple] = []
     if args.depth_dir is not None:
-        depth_dst = args.dst / "depth_maps"
+        depth_dst = args.dst / "depths"
         depth_dst.mkdir()
         missing: list[str] = []
         for (src_img, c2w_gl), stem in zip(frame_meta, stems):
-            src_d = args.depth_dir / f"{stem}.png"
-            if not src_d.exists():
-                missing.append(str(src_d))
+            # Accept either uint16 PNG (KITTI GT) or float32 npy (DA-V2)
+            src_png = args.depth_dir / f"{stem}.png"
+            src_npy = args.depth_dir / f"{stem}.npy"
+            if src_npy.exists():
+                depth_m = np.load(src_npy).astype(np.float32)
+            elif src_png.exists():
+                raw = np.array(Image.open(src_png), dtype=np.float32)
+                depth_m = raw / 256.0   # KITTI uint16 → metres
+            else:
+                missing.append(stem)
                 continue
-            # uint16 → metric float → uint8 with fixed scale
-            raw = np.array(Image.open(src_d), dtype=np.float32)
-            depth_m = raw / 256.0          # KITTI encoding
-            u8 = np.clip(depth_m / _MAX_DEPTH_M * 255, 0, 255).astype(np.uint8)
-            Image.fromarray(u8).save(depth_dst / f"depth_{stem}.png")
+            np.save(depth_dst / f"{stem}.npy", depth_m)
             depth_copied += 1
-            # Back-project to world-frame 3D points
-            pts = backproject_depth(src_d, src_img, c2w_gl, fx, fy, cx, cy)
+            pts = backproject_depth(depth_m, src_img, c2w_gl, fx, fy, cx, cy)
             all_points.extend(pts)
+
         if missing:
             preview = ", ".join(missing[:5])
             suffix = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
-            print(
-                f"  WARNING: {len(missing)} depth map(s) not found: "
-                f"{preview}{suffix}"
-            )
-        # Overwrite the placeholder points3D.bin with real back-projected points
+            print(f"  WARNING: {len(missing)} depth map(s) not found: {preview}{suffix}")
         if all_points:
             write_points3d_bin(sparse_dir / "points3D.bin", all_points)
 
-    # Summary
     print("Done.")
     print(f"  frames      : {len(frames)}")
     print(f"  image size  : {w} x {h}")
     print(f"  focal (fx,fy): {fx:.4f}, {fy:.4f}")
-    print(f"  principal   : ({cx:.2f}, {cy:.2f})")
-    print(f"  cameras.bin : 1 PINHOLE camera  →  {sparse_dir / 'cameras.bin'}")
+    print(f"  cameras.bin : 1 PINHOLE  →  {sparse_dir / 'cameras.bin'}")
     print(f"  images.bin  : {len(frames)} images  →  {sparse_dir / 'images.bin'}")
     print(f"  points3D.bin: {len(all_points)} points  →  {sparse_dir / 'points3D.bin'}")
     print(f"  images dir  : {images_dst}")
     if args.depth_dir is not None:
-        print(f"  depth maps  : {depth_copied}/{len(frames)} copied to {depth_dst} from {args.depth_dir}")
+        print(f"  depths      : {depth_copied}/{len(frames)} saved to {depth_dst}")
     else:
-        print(f"  depth maps  : skipped (no --depth-dir provided)")
+        print(f"  depths      : skipped (no --depth-dir)")
 
-    # Format version marker — used by train script to detect stale datasets.
-    (args.dst / ".colmap_v5").touch()
+    (args.dst / ".sparsegs_v1").touch()
 
 
 if __name__ == "__main__":

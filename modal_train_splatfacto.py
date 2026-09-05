@@ -311,11 +311,16 @@ def train(
     )
 
     # ---- sanity checks -------------------------------------------------
-    for path, label in [
+    dataset_already_built = os.path.exists(f"{data_dir}/transforms.json")
+    checks = [
         (seq_dir, "KITTI sequence dir"),
         (f"{nerfstudio_src}/transforms.json", "sparse nerfstudio transforms.json"),
-        (depth_dir, "depth supervision folder"),
-    ]:
+    ]
+    # Skip depth_dir check when the nerfstudio dataset is already built — depths
+    # are embedded in data_dir and may no longer exist at the raw seq_dir path.
+    if not dataset_already_built:
+        checks.append((depth_dir, "depth supervision folder"))
+    for path, label in checks:
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"Missing {label}: {path}\n"
@@ -496,6 +501,118 @@ def run_headline_seeds(
     for _ in train.starmap(tuples):
         pass
     print("All headline seed runs complete.")
+
+
+# ---------------------------------------------------------------------------
+# run_global_seeds — run global (unmasked, τ=1.00) supervision at λ=0.10
+# with seeds 0, 1, 2 in parallel for a proper paired comparison against the
+# masked headline runs.
+#
+# Seed 0 may already exist as the original global run; set --seeds to skip it.
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::run_global_seeds
+#   modal run modal_train_splatfacto.py::run_global_seeds --seeds "1,2"
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_global_seeds(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    lambda_depth: float = 0.1,
+    photo_mask_threshold: float = 1.0,
+    max_num_iterations: int = 50000,
+    seeds: str = "0,1,2",
+):
+    """Run global (τ=1.00) Splatfacto over multiple seeds in parallel.
+
+    Uses the same mask dir structure as run_headline_seeds but with threshold=1.0,
+    so the mask keeps every pixel (equivalent to unmasked depth supervision).
+    Seeds match those used in run_headline_seeds for paired comparison.
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")  # 1.00 -> "100"
+    mask_dir = (
+        f"{DATA_MOUNT}/masks/"
+        f"kitti_seq02_0034_sparse_every2_da2_lambda{lambda_depth}_nomask_{max_num_iterations}"
+        f"_low{thresh_tag}"
+    )
+
+    print(f"Global mask dir: {mask_dir}")
+    print(f"Launching seeds: {seed_list}")
+
+    tuples = [
+        (
+            kitti_seq_dir, lambda_depth, "mse", "da2",
+            max_num_iterations, mask_dir, "low", photo_mask_threshold,
+            "kitti", "bicycle", f"low{thresh_tag}", s,
+        )
+        for s in seed_list
+    ]
+    for _ in train.starmap(tuples):
+        pass
+    print("All global seed runs complete.")
+
+
+# ---------------------------------------------------------------------------
+# run_extra_seeds — run additional seeds for ANY sequence, masked or nomask.
+#
+# Usage (masked τ=0.18 seeds 1+2 for Seq00):
+#   modal run modal_train_splatfacto.py::run_extra_seeds \
+#     --kitti-seq-dir "KITTISeq00_2011_10_03_drive_0027_sync_llffdtu_s2700_e3000_densegt" \
+#     --condition masked --seeds "1,2"
+#
+# Usage (global/nomask seeds 1+2 for Seq05):
+#   modal run modal_train_splatfacto.py::run_extra_seeds \
+#     --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt" \
+#     --condition nomask --seeds "1,2"
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def run_extra_seeds(
+    kitti_seq_dir: str = "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt",
+    condition: str = "masked",   # "masked" (τ=0.18) or "nomask" (global)
+    lambda_depth: float = 0.1,
+    photo_mask_threshold: float = 0.18,
+    max_num_iterations: int = 50000,
+    seeds: str = "1,2",
+):
+    """Run additional seeds for any KITTI sequence in masked or nomask condition.
+
+    condition="masked": uses the pre-computed τ=0.18 photometric mask for the sequence.
+    condition="nomask":  no photometric mask (global depth supervision on all valid pixels).
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+    slug = _derive_slug(kitti_seq_dir)
+
+    if condition == "masked":
+        thresh_tag = f"{photo_mask_threshold:.2f}".replace(".", "")
+        mask_dir = (
+            f"{DATA_MOUNT}/masks/"
+            f"{slug}_sparse_every2_da2_lambda{lambda_depth}_nomask_{max_num_iterations}"
+            f"_low{thresh_tag}"
+        )
+        mask_label = f"low{thresh_tag}"
+        threshold = photo_mask_threshold
+        mask_mode = "low"
+    else:  # nomask / global
+        mask_dir = ""
+        mask_label = "nomask"
+        threshold = 0.18   # unused when no mask dir
+        mask_mode = "low"
+
+    print(f"Seq: {slug}  condition: {condition}")
+    print(f"mask_dir: {mask_dir or '(none)'}")
+    print(f"Launching seeds: {seed_list}")
+
+    tuples = [
+        (
+            kitti_seq_dir, lambda_depth, "mse", "da2",
+            max_num_iterations, mask_dir, mask_mode, threshold,
+            "kitti", "bicycle", mask_label, s,
+        )
+        for s in seed_list
+    ]
+    for _ in train.starmap(tuples):
+        pass
+    print(f"All {condition} seed runs complete for {slug}.")
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +971,23 @@ def run_eval(
     print("\n========== Eval Results ==========")
     print(json.dumps(metrics, indent=2))
     print("==")
+
+
+# ---------------------------------------------------------------------------
+# eval_by_name — eval a run by its exact experiment directory name
+#
+# Usage:
+#   modal run modal_train_splatfacto.py::eval_by_name \
+#     --exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.1_low100_seed1_50000"
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def eval_by_name(exp_name: str):
+    import json
+    print(f"Evaluating: {exp_name}")
+    metrics = eval_run.remote(exp_name=exp_name)
+    print("\n========== Eval Results ==========")
+    print(json.dumps(metrics, indent=2))
+    print("==================================")
 
 
 # ---------------------------------------------------------------------------
