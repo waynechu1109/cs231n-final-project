@@ -1,29 +1,10 @@
-"""
-Modal training script for Mip-NeRF-360 on KITTI sequences.
+"""Modal training script for Mip-NeRF-360 on KITTI sequences.
 
-Three-experiment pipeline: RGB-only → Global depth → Low-error masked depth.
-
+Three-experiment pipeline: RGB-only -> Global depth -> Low-error masked depth.
 Prerequisite: depths_da2 must already exist in the kitti-nerf-data volume for the
-target sequence. Run the Splatfacto pipeline first to populate it:
-  modal run modal_train_splatfacto.py::run_new_seq_experiments \\
-    --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt"
+target sequence (populated by modal_train_splatfacto.py::run_new_seq_experiments).
 
-Quick start (all three experiments on Seq05):
-  modal run modal_train_mipnerf.py::run_kitti_seq_experiments \\
-    --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt"
-
-Eval:
-  modal run modal_train_mipnerf.py::run_eval \\
-    --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.0
-
-  modal run modal_train_mipnerf.py::run_eval \\
-    --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.15
-
-  modal run modal_train_mipnerf.py::run_eval \\
-    --kitti-seq-dir "KITTISeq05_..." --lambda-depth 0.15 --masked
-
-Download checkpoints:
-  modal volume get nerf-outputs <exp_name>/mipnerf360 ./local_mipnerf_ckpt
+Entrypoints and eval commands are documented in docs/modal-mipnerf.md.
 """
 
 from __future__ import annotations

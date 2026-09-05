@@ -221,6 +221,67 @@ Modal requires `copy=True` on any `add_local_dir` call that is followed by
 `run_commands`. Without it, Modal raises `InvalidError` because local files are injected
 at container startup rather than at build time.
 
+## Advanced Entrypoints
+
+### Lambda × threshold joint sweep
+
+```bash
+modal run modal_train_splatfacto.py::sweep_lambda_threshold \
+  --lambdas "0.05 0.1 0.15" \
+  --thresholds "0.16 0.18 0.20 0.22 1.0"
+```
+
+### Matched-ratio ablation (high-error vs random masks)
+
+```bash
+# Generates both high_error_matched and random_matched (seed 0) masks, then trains both.
+modal run modal_train_splatfacto.py::run_matched_ablation \
+  --base-exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.1_nomask_50000" \
+  --lambda-depth 0.1
+```
+
+### Random-seed stability sweep
+
+```bash
+# Add seed 1 and seed 2 (seed 0 is produced by run_matched_ablation).
+modal run modal_train_splatfacto.py::run_random_seed_sweep --seeds "1,2"
+```
+
+### Cross-sequence generalization (new KITTI sequence)
+
+Handles full data preparation (COLMAP → transforms, DA-V2 inference, GT alignment) and trains all three key experiments in one command.
+
+```bash
+# KITTISeq05 — three experiments: RGB-only, Global depth, Low-error mask τ=0.18
+modal run modal_train_splatfacto.py::run_new_seq_experiments \
+  --kitti-seq-dir "KITTISeq05_2011_09_30_drive_0018_sync_llffdtu_s400_e725_densegt"
+```
+
+### Extended Evaluation
+
+```bash
+# Single experiment
+modal run modal_train_splatfacto.py::run_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambda-depth 0.1
+
+# With mask (add --masked for threshold-based experiments)
+modal run modal_train_splatfacto.py::run_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambda-depth 0.1 --photo-mask-threshold 0.18 --masked
+
+# Ablation experiments (use --mask-label)
+modal run modal_train_splatfacto.py::run_eval \
+  --lambda-depth 0.1 --mask-label "high_error_matched_low018"
+modal run modal_train_splatfacto.py::run_eval \
+  --lambda-depth 0.1 --mask-label "random_matched_low018_seed0"
+
+# Parallel eval of all lambda values
+modal run modal_train_splatfacto.py::sweep_eval \
+  --kitti-seq-dir "KITTISeq02_2011_10_03_drive_0034_sync_llffdtu_s2749_e2929_densegt" \
+  --lambdas "0.0 0.05 0.1 0.15" --photo-mask-threshold 0.18 --masked
+```
+
 ## Cost Estimates (Modal A10G, $1.10/hr)
 
 | Job | Duration | Approx. Cost |

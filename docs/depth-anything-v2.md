@@ -1,12 +1,8 @@
 # Depth Anything V2 Pipeline
 
-This guide documents the Depth Anything V2 monocular depth supervision pipeline used for KITTI MipNeRF-360 experiments.
+Depth Anything V2 monocular depth supervision pipeline used for KITTI Mip-NeRF-360 experiments.
 
-## Depth Anything V2 + MipNeRF-360 Pipeline
-
-This section documents the Depth Anything V2 monocular depth supervision pipeline implemented for the KITTI MipNeRF-360 experiments.
-
-Please do not overwrite existing checkpoint folders. Always use a new `Config.checkpoint_dir` for each run.
+Do not overwrite existing checkpoint folders. Always use a new `Config.checkpoint_dir` for each run.
 
 ### Environments
 

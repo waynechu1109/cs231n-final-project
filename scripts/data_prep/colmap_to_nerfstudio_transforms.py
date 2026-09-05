@@ -210,8 +210,6 @@ def colmap_to_transforms(recon_dir: Path, output_dir: Path) -> int:
     # Assumes a centered crop (symmetric on each axis).
     images_dir = output_dir / "images"
     first_image = sorted(images_dir.iterdir())[0]
-    import struct as _struct  # noqa: F811 (already imported at top, harmless re-import)
-    # Use a minimal PNG/JPEG header read to avoid needing Pillow.
     actual_w, actual_h = _read_image_size(first_image)
     colmap_w, colmap_h = out["w"], out["h"]
     if (actual_w, actual_h) != (colmap_w, colmap_h):

@@ -1,37 +1,7 @@
-"""
-Modal training script for splatfacto-da2 (masked depth prior, every2 sparse KITTI).
+"""Modal training script for splatfacto-da2 (masked depth prior on sparse KITTI).
 
-Quick start:
-  pip install modal
-  modal setup                          # one-time auth
-  modal volume create kitti-nerf-data  # one-time
-  modal volume create nerf-outputs     # one-time
-
-Upload data (run once per dataset):
-  modal volume put kitti-nerf-data /path/to/kitti_select_static_5seq_sparse_every2 kitti/kitti_select_static_5seq_sparse_every2
-  modal volume put kitti-nerf-data /path/to/nerfstudio/kitti_seq02_0034_sparse_every2 nerfstudio/kitti_seq02_0034_sparse_every2
-
-Train (default seq02, lambda=0.05):
-  modal run modal_train_splatfacto.py::main
-
-Override hyperparams:
-  modal run modal_train_splatfacto.py::main --lambda-depth 0.1 --depth-loss-type l1 --max-num-iterations 30000
-
-Lambda sweep (parallel GPU containers):
-  modal run modal_train_splatfacto.py::sweep
-  modal run modal_train_splatfacto.py::sweep --lambdas "0.0 0.05 0.1 0.2" --loss-types "mse l1"
-
-Threshold sweep (two-stage: mask generation → parallel retrain):
-  # Step 1: base train (no mask)
-  modal run modal_train_splatfacto.py::main --lambda-depth 0.05
-  # Step 2: sweep thresholds (generates masks then retrains, all on Modal)
-  modal run modal_train_splatfacto.py::sweep_threshold \\
-    --base-exp-name "kitti_seq02_0034_sparse_every2_da2_lambda0.05" \\
-    --thresholds "0.08 0.12 0.16 0.22" \\
-    --photo-mask-mode low
-
-Download outputs:
-  modal volume get nerf-outputs . ./local_outputs
+Setup, dataset upload, entrypoints, and cost estimates are documented in
+docs/modal-splatfacto.md.
 """
 
 from __future__ import annotations

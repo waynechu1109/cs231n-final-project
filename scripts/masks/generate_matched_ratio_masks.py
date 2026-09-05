@@ -155,25 +155,16 @@ def main() -> None:
                 # No depth in batch; treat all pixels as valid (safety fallback).
                 valid_depth = np.ones((H, W), dtype=bool)
 
-            # --- reference count k from low-error mask ---
-            # k = |valid_depth AND e(u) < ref_threshold|
             ref_mask = valid_depth & (photo_error < args.ref_threshold)
-            k = int(ref_mask.sum())
             n_valid = int(valid_depth.sum())
+            k = min(int(ref_mask.sum()), n_valid)
 
-            # Clamp in the degenerate case where ref count > valid pixels
-            k = min(k, n_valid)
-
-            # Flat indices of all valid-depth pixels
             valid_indices = np.where(valid_depth.ravel())[0]
-
-            # --- select k pixels according to mode ---
             new_mask_flat = np.zeros(H * W, dtype=bool)
 
             if k > 0:
                 if args.mode == "high_matched":
                     errors_at_valid = photo_error.ravel()[valid_indices]
-                    # argpartition: indices of the k elements with the largest values
                     top_k_local = np.argpartition(errors_at_valid, -k)[-k:]
                     new_mask_flat[valid_indices[top_k_local]] = True
                 else:  # random_matched
